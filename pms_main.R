@@ -24,7 +24,7 @@ library(dplyr);   library(ggplot2); library(scales)
 library(patchwork); library(treemap); library(DT)
 library(stringr); library(PerformanceAnalytics)
 
-setwd("c:\\easy_r")
+setwd("c:\\PMS_Core")
 
 options(scipen = 999)
 
