@@ -11,15 +11,16 @@
 # 0) 패키지
 # ------------------------------------------------------------
 pkg <- c(
-  "readr","readxl","dplyr","stringr","scales",
-  "openxlsx","ggplot2","xts","PerformanceAnalytics","DT"
+  "readr","readxl","dplyr","stringr","scales","quantmod",
+  "openxlsx","ggplot2","xts","PerformanceAnalytics","DT",
+  "rvest", "writexl"
 )
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
 
-library(readr); library(readxl); library(dplyr); library(stringr); library(scales)
+library(readr); library(readxl); library(dplyr); library(stringr); library(scales);library(quantmod)
 library(openxlsx); library(ggplot2); library(xts); library(PerformanceAnalytics)
-library(DT)
+library(DT);library(rvest);library(writexl)
 
 options(scipen = 999)
 
@@ -303,6 +304,7 @@ msg("\n[요약] 오늘 총자산: %s 원 / 총수익금: %s 원",
 
 # ------------------------------------------------------------
 # 10) DT 출력 (전일대비도 표시 + 음수 빨간색)
+#     처음 실행하는 경우 전일대비 수익금, 비율은 안나옴(전일자 데이터가 없으니 당연)
 # ------------------------------------------------------------
 print(
   datatable(
