@@ -17,7 +17,7 @@ library(readr)
 today <- format(Sys.Date(), "%Y-%m-%d")
 #today <- format(Sys.Date()-1, "%Y-%m-%d")
 
-url <- "https://raw.githubusercontent.com/shbang-cmd/stock_eval/main/input_stock_us.csv"
+url <- "https://github.com/shbang-cmd/PMS_Core/blob/master/input_stock_us.csv"
 
 data_en <- read_csv(url, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
 

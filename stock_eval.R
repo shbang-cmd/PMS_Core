@@ -11,7 +11,7 @@ library(quantmod)
 
 today <- format(Sys.Date(), "%Y-%m-%d")
 
-url <- "https://raw.githubusercontent.com/shbang-cmd/stock_eval/main/input_stock.csv"
+url <- "https://github.com/shbang-cmd/PMS_Core/blob/master/input_stock.csv"
 data <- read_csv(url, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
 
 output_file <- paste0("output_stock_", today, ".xlsx")
