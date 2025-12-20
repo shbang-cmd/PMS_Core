@@ -1,13 +1,6 @@
 # 한국주식은 quantmod 패키지 대신 네이버 주식 홈페이지에서 실시간으로 받아오도록 개선
-# quantmod 라이브러니는 20분 지연시세라서 국내 주식시장 오픈 이후 20분간은 느리기 때문
-library(rvest)
-library(dplyr)
-library(readr)
-library(openxlsx)
-library(scales)
-library(ggplot2)
-library(tidyverse)
-library(quantmod)
+# quantmod 라이브러리는 20분 지연시세라서 국내 주식시장 오픈 이후 20분간은 느리기 때문
+
 
 today <- format(Sys.Date(), "%Y-%m-%d")
 

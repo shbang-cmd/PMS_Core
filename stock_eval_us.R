@@ -1,19 +1,5 @@
-pkg = c("quantmod", "readxl", "writexl", "dplyr", "tidyverse", "rvest", "httr")
-new.pkg = pkg[!(pkg %in% installed.packages()[, "Package"])]
-if (length(new.pkg)) {
-  install.packages(new.pkg, dependencies = TRUE)
-}
-
-library(quantmod)
-library(writexl)
-library(dplyr)
-library(tidyverse)
-library(rvest)
-library(httr)
-library(readr)
-
-
 # 오늘의 날짜 문자열 생성
+
 today <- format(Sys.Date(), "%Y-%m-%d")
 #today <- format(Sys.Date()-1, "%Y-%m-%d")
 
