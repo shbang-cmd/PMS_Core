@@ -42,14 +42,19 @@ options(scipen = 999)  # 숫자의 과학적표기법 방지
 wd        <- "c:\\PMS"     # 작업디렉토리
 fund_name <- "JS Fund"     # 펀드/계좌 이름(임의로 바꾸면 됨)
 
-weights <- c(
-  0.40,  # SPY등
-  0.20,  # SCHD
-  0.15,  # QQQ
-  0.10,  # TQQQ
-  0.10,  # GOLD
-  0.05   # IEF
+# 각 종목군별 비율 : 합해서 1로 만듦
+# 한 번 정하면 장기간 변경하지 않을 각오를 해야 함
+weights <- c(              
+  0.40,  # SPY등(SPY를 비롯한 아래 종목군에 속하지 않는 여러 종목)
+  0.20,  # SCHD(배당주를 꾸준히 증가시키는 우량주)
+  0.15,  # QQQ(나스닥 기술주)
+  0.10,  # TQQQ(QQQ의 3배 레버리지)
+  0.10,  # GOLD(금)
+  0.05   # IEF(채권)
 )
+
+# 이름으로 참조가 가능하도록 setNames 
+# 조회 예시) as.numeric(weights["SPY_ETC"])
 weights <- setNames(weights, c("SPY_ETC","SCHD","QQQ","TQQQ","GOLD","IEF"))
 
 setwd(wd)
@@ -211,6 +216,7 @@ repeat {
     
     # 분석 시에는 Return NA 제거한 버전 사용 권장
     dd_ret <- dd %>% dplyr::filter(!is.na(Return))
+    
     
     # =========================================================
     #  초기 구간(100일 이하) 리스크 분석 게이트 (핵심)
@@ -732,7 +738,14 @@ repeat {
               round((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) * 100 / tail(dd$Sum, 1), 2),
               "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
               
-              "SPY등:SCHD:QQQ:TQQQ:금:채권(최종목표%) = 40.0 : 20.0 : 15.0 : 10.0 : 10.0 : 5.0\n",
+              "SPY등:SCHD:QQQ:TQQQ:금:채권(최종목표%) = ", 
+              sprintf("%.1f", as.numeric(weights["SPY_ETC"]) * 100), " : ",
+              sprintf("%.1f", as.numeric(weights["SCHD"]) * 100),  " : ",
+              sprintf("%.1f", as.numeric(weights["QQQ"]) * 100),  " : ",
+              sprintf("%.1f", as.numeric(weights["TQQQ"]) * 100),  " : ",
+              sprintf("%.1f", as.numeric(weights["GOLD"]) * 100),  " : ",
+              sprintf("%.1f", as.numeric(weights["IEF"]) * 100),
+              "\n",
               "SPY등:SCHD:QQQ:TQQQ:금:채권(현재비율%) = ",
               format(round(asset_SPY_ETC_ratio, 1), nsmall = 1)," : ",
               format(round(asset_SCHD_ratio,    1), nsmall = 1)," : ",
