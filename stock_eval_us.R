@@ -52,7 +52,7 @@ for (i in 1:nrow(data_en)) {
   
   # 현재 주식 가격 가져오기
   #getSymbols(symbol, src = "yahoo", from = Sys.Date(), to = Sys.Date())
-  getSymbols(symbol, src = "yahoo", from = Sys.Date()-6, to = Sys.Date()) # 뉴욕과 시차때문에 from Date에서 하루 전 날짜로 설정해줌
+  getSymbols(symbol, src = "yahoo", from = Sys.Date()-6, to = Sys.Date()) # 뉴욕과 시차때문에 from Date에서 며칠전 날짜로 설정해줌(오래동안 실행해본 경험에서 나왔음)
   
   current_price[i] <- as.numeric(last(get(symbol)[,4])) # symbol 종목의 open, high, low, close 가격에서 4번째 위치한 종가를 가져온다.
   
