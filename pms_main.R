@@ -40,7 +40,7 @@ options(scipen = 999)  # 숫자의 과학적표기법 방지
 # 1) 개인별 세팅 변수
 # =========================================================
 wd        <- "c:\\PMS"     # 작업디렉토리
-fund_name <- "JS Fund"     # 펀드/계좌 이름(임의로 바꾸면 됨)
+fund_name <- "JS Fund"     # 펀드/계좌 이름(멋진 이름으로 지어보자)
 
 # 각 종목군별 비율 : 합해서 1로 만듦
 # 한 번 정하면 장기간 변경하지 않을 각오를 해야 함
@@ -382,7 +382,7 @@ repeat {
     end_date   <- format(max(dd$Date, na.rm = TRUE), "%Y-%m-%d")
     
     plot_title <- paste0(
-      fund_name, " 주식평가액 분석 (", start_date, " ~ ", end_date, ")  ",
+      fund_name, " Portfolio Monitoring System (", start_date, " ~ ", end_date, ")  ",
       format(Sys.time(), "%Y년 %m월 %d일"),
       "(", week_kor[as.numeric(format(Sys.Date(), "%w")) + 1], ") ",
       format(Sys.time(), "%H시 %M분")
@@ -758,55 +758,58 @@ repeat {
       common_date_range <- range(dd$Date, na.rm = TRUE)
       # ---------- 상단 플롯(p) ----------
       p <- ggplot(dd, aes(x = Date)) +
-              geom_point(aes(y = sum_left, color = Profit / 10000000), size = 5) +
-              geom_line(aes(y = sum_left, group = 1), color = "gray") +
-              geom_smooth(aes(y = sum_left), method = "lm", se = FALSE,
-                          color = "orange", linetype = "dashed", linewidth = 1) +
-              geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1) +
-              geom_point(aes(y = a * ret_right + b), color = "green", size = 2) +
-              
-              geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +  # 노란색으로 0% 기준선 그리기
-              
-              scale_color_gradient(low = "red", high = "blue") +
-              scale_x_date(date_breaks = "2 months", labels = scales::label_date_short()) +
-              scale_y_continuous(
-                      name = "보유합계(천만원)",
-                      sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
-              ) +
-              labs(
-                      title = plot_title,
-                      x = paste0(exchange_rate, "원/달러", "(", exchange_diff, ")"),
-                      color = "수익"
-              ) +
-              theme_minimal(base_size = 13) +
-              theme(
-                      axis.text.x = element_text(angle = 45, hjust = 1),
-                      axis.title.y.right = element_text(color = "green"),
-                      legend.position = "right",
-                      plot.title = element_text(hjust = 0.5, face = "bold")
-              ) +
-              coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
-              annotate("text",
-                       x = min(dd$Date, na.rm = TRUE),
-                       y = max(sum_left, na.rm = TRUE),
-                       label = label_text,
-                       hjust = 0, vjust = 1, size = 5, color = "black") +
-              annotate("label",
-                       x     = max(dd$Date, na.rm = TRUE),
-                       y     = min(sum_left, na.rm = TRUE) * 1.02,
-                       label = badge_text,
-                       hjust = 1, vjust = 0,
-                       size  = 5.5,
-                       fontface = "bold",
-                       fill  = badge_color,
-                       color = "white")
+        geom_point(aes(y = sum_left, color = Profit / 10000000), size = 5) +
+        geom_line(aes(y = sum_left, group = 1), color = "gray") +
+        geom_smooth(aes(y = sum_left), method = "lm", se = FALSE,
+                    color = "orange", linetype = "dashed", linewidth = 1) +
+        geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1) +
+        geom_point(aes(y = a * ret_right + b), color = "green", size = 2) +
+        
+        geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) + 
+        
+        scale_color_gradient(low = "red", high = "blue") +
+        
+        # --- 여기에서 모든 X축 설정을 통합합니다 ---
+        scale_x_date(
+          limits = common_date_range,           # 범위 고정
+          date_breaks = "2 months",             # 간격
+          labels = scales::label_date_short(),  # 라벨 형식
+          expand = c(0, 0)                      # 여백 제거
+        ) +
+        # ------------------------------------------
       
-      p <- p + scale_x_date(
-              limits = common_date_range, # 범위 고정
-              date_breaks = "2 months", 
-              labels = scales::label_date_short(),
-              expand = c(0, 0) # 불필요한 양끝 여백 제거
-      )
+      scale_y_continuous(
+        name = "보유합계(천만원)",
+        sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
+      ) +
+        labs(
+          title = plot_title,
+          x = paste0(exchange_rate, "원/달러", "(", exchange_diff, ")"),
+          color = "수익"
+        ) +
+        theme_minimal(base_size = 13) +
+        theme(
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.title.y.right = element_text(color = "green"),
+          legend.position = "right",
+          plot.title = element_text(hjust = 0.5, face = "bold")
+        ) +
+        coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
+        annotate("text",
+                 x = min(dd$Date, na.rm = TRUE),
+                 y = max(sum_left, na.rm = TRUE),
+                 label = label_text,
+                 hjust = 0, vjust = 1, size = 5, color = "black") +
+        annotate("label",
+                 x     = max(dd$Date, na.rm = TRUE),
+                 y     = min(sum_left, na.rm = TRUE) * 1.02,
+                 label = badge_text,
+                 hjust = 1, vjust = 0,
+                 size  = 5.5,
+                 fontface = "bold",
+                 fill  = badge_color,
+                 color = "white")
+      
       
       # ---------- Drawdown 플롯(p_dd) ----------
       dd2 <- dd %>%
