@@ -739,20 +739,19 @@ repeat {
               "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
               
               "SPY등:SCHD:QQQ:TQQQ:금:채권(최종목표%) = ", 
-              sprintf("%.1f", as.numeric(weights["SPY_ETC"]) * 100), " : ",
-              sprintf("%.1f", as.numeric(weights["SCHD"]) * 100),  " : ",
-              sprintf("%.1f", as.numeric(weights["QQQ"]) * 100),  " : ",
-              sprintf("%.1f", as.numeric(weights["TQQQ"]) * 100),  " : ",
-              sprintf("%.1f", as.numeric(weights["GOLD"]) * 100),  " : ",
-              sprintf("%.1f", as.numeric(weights["IEF"]) * 100),
-              "\n",
+              sprintf("%4.1f", as.numeric(weights["SPY_ETC"]) * 100), " : ",
+              sprintf("%4.1f", as.numeric(weights["SCHD"]) * 100),  " : ",
+              sprintf("%4.1f", as.numeric(weights["QQQ"]) * 100),  " : ",
+              sprintf("%4.1f", as.numeric(weights["TQQQ"]) * 100),  " : ",
+              sprintf("%4.1f", as.numeric(weights["GOLD"]) * 100),  " : ",
+              sprintf("%4.1f", as.numeric(weights["IEF"]) * 100), "\n",
               "SPY등:SCHD:QQQ:TQQQ:금:채권(현재비율%) = ",
-              format(round(asset_SPY_ETC_ratio, 1), nsmall = 1)," : ",
-              format(round(asset_SCHD_ratio,    1), nsmall = 1)," : ",
-              format(round(asset_QQQ_ratio,     1), nsmall = 1)," : ",
-              format(round(asset_TQQQ_ratio,    1), nsmall = 1)," : ",
-              format(round(asset_GLD_ratio,     1), nsmall = 1)," : ",
-              format(round(asset_IEF_ratio,     1), nsmall = 1)
+              sprintf("%4.1f", asset_SPY_ETC_ratio), " : ",
+              sprintf("%4.1f", asset_SCHD_ratio), " : ",
+              sprintf("%4.1f", asset_QQQ_ratio), " : ",
+              sprintf("%4.1f", asset_TQQQ_ratio), " : ",
+              sprintf("%4.1f", asset_GLD_ratio), " : ",
+              sprintf("%4.1f", asset_IEF_ratio)
       )
       
       # 두 그래프에 공통으로 적용할 X축 범위를 계산
