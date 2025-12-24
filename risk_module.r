@@ -965,12 +965,12 @@ run_garch_vol_alert <- function(dd, min_obs = 250,
   }
   
   # 1) 수익률 벡터 확보 ----------------------------------------
-  if (!("Return" %in% names(dd))) {
-    cat("[경고] dd에 'Return' 컬럼이 없어 GARCH 분석을 건너뜁니다.\n")
+  if (!("Return_TWR" %in% names(dd))) {
+    cat("[경고] dd에 'Return_TWR' 컬럼이 없어 GARCH 분석을 건너뜁니다.\n")
     return(invisible(NULL))
   }
   
-  ret <- as.numeric(dd$Return)
+  ret <- as.numeric(dd$Return_TWR)
   ret <- ret[is.finite(ret)]
   
   if (length(ret) < min_obs) {

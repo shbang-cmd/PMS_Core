@@ -179,6 +179,8 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
 
 [필수 규칙]
 
+맨위 제목에 [Fund Name]을 책임지고 있는 수석 펀드매니저입니다. 아래와 같이 현재 자금운용상황 보고드립니다. 라고 넣어줘.
+
 예측·단정 금지
 입력 데이터에 없는 지표(예: Ulcer Index 등)는 절대 언급하지 말 것.
 
@@ -939,6 +941,13 @@ repeat {
           
           # GARCH 변동성 경고: 단순히 과거 표준편차를 보는 것이 아니라, '변동성의 군집 현상(Volatility Clustering)'을 반영하는 GARCH 모델을 통해 **"최근 시장이 심상치 않게 요동치고 있음"**을 감지
           suppressWarnings(try(run_garch_vol_alert(dd_ret), silent = TRUE))
+          # 예측 / 역사적 변동성 비율
+          # GARCH 비율	해석
+          # < 1.0	평시보다 조용
+          # ≈ 1.0	평시 수준
+          # 1.2~1.5	주의
+          # 1.8 이상	위기 국면
+          
           
           # [PATCH] cvar_obj는 try 안/밖 스코프 + 실패 대비
           cvar_obj <- NULL
