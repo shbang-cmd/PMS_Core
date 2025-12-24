@@ -169,12 +169,16 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
   # 실제 운용을 해보니 아래의 자연어로 된 Prompt Engineering도 무척 중요
   # 제미나이가 사용자가 듣기 좋은 말만 하거나 환각에 빠지지 않도록 규칙을 잘 정해야 함
   # 사용법 : reports/gemini_prompt.txt 를 오픈하고 전체 텍스트를 복사해서 제미나이에게 물어 본다.
+  # chatgpt, gemini의 API 를 이용하는 방법도 있으나 너무 복잡하고 유료서비스라 간단하게 Prompt만 생성함
   paste0(
-    "[Fund Name] : ", fund_name, "
-[Report Time] : ", report_time_kst, " (KST)
+    
+"[Fund Name] : ", fund_name, "[Report Time] : ", report_time_kst, 
 
-당신은 **“기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저”**입니다.
+" 
+(KST) 당신은 **“기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저”**입니다.
+
 아래 Portfolio Management System(PMS) 출력 데이터만을 근거로,
+
 ‘오늘의 투자운용 현황’에 대한 일일 운용 코멘트를 전문적으로 작성하세요.
 
 [필수 규칙]
@@ -354,19 +358,6 @@ PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
 UPDATE_EVERY_SEC <- 10  # ★ 10초마다(원하면 30, 60으로 바꾸세요)
 
 last_update_time <- Sys.time() - 9999  # 첫 루프에서 바로 저장되게
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # =========================================================
