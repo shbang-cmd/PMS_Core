@@ -10,6 +10,8 @@
 #         output_stock_{YYYY-MM-DD}.xlsx    : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx : 미국주식 평가액
 #         output_sum.csv                    : 평가액총액, 수익금
+#         reports/Daily_Risk_YYYYMMDD.pdf   : 1페이지 그래프 보고서
+#         reports/gemini_prompt.txt         : 제미나이 질의어(프롬프트)
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
 # 주) 리스크 및 운용 성과 평가는 TWR 기준,계좌 증감 및 체감 성과 표시는 NAV 기준으로 해석(형식적으로는 NAV 기반, 개념적으로는 TWR(Time-Weighted Return)에 해당)
 ###############################################
@@ -19,7 +21,7 @@
 
 # =========================================================
 # 0) 패키지 설치/로드
-# =========================================================
+# ========================================================
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod", "xts",
@@ -118,8 +120,244 @@ add_twr_return_to_dd <- function(dd, ret_clip = 0.5, flow_deadband = 1000) {
     ) %>%
     mutate(Return = if_else(!is.na(Return) & abs(Return) < ret_clip, Return, NA_real_))
   
-  return(dd) # [PATCH] 반드시 dd 반환
+  return(dd) 
 }
+
+
+# 프롬프트 엔지니어링을 이용하여 자연어로 운용성과를 보고 받음
+# ============================================================
+# PMS -> Gemini prompt 주기적 저장 
+# ============================================================
+dir.create("reports", showWarnings = FALSE)
+
+# ---- 1) 프롬프트 생성 함수 (리스크 지표 포함 버전) ----
+make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
+                                   fund_name = "JS Fund",
+                                   report_time_kst = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                                   flow_text = "금일 Flow(입출금): 0원 / 매수·매도: 없음(거래 0건)",
+                                   risk_metrics = NULL,
+                                   warnings_vec = character(0),
+                                   errors_vec   = character(0),
+                                   take_last_n_days = 2) {
+  
+  dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
+  dd_tail <- tail(dd, take_last_n_days)
+  tab_txt <- utils::capture.output(print(dd_tail))
+  
+  badge_txt <- if (!is.null(badge_text) && nzchar(badge_text)) badge_text else "(미제공)"
+  warn_txt  <- if (length(warnings_vec) > 0) paste0("- ", warnings_vec, collapse = "\n") else "(없음)"
+  err_txt   <- if (length(errors_vec)  > 0) paste0("- ", errors_vec,  collapse = "\n") else "(없음)"
+  
+  # 리스크 지표 텍스트
+  risk_txt <- "(미제공)"
+  if (!is.null(risk_metrics)) {
+    if (is.data.frame(risk_metrics)) {
+      risk_txt <- paste(utils::capture.output(print(risk_metrics)), collapse = "\n")
+    } else if (is.list(risk_metrics)) {
+      nm <- names(risk_metrics)
+      lines <- paste0("- ", nm, " = ", sapply(risk_metrics, function(x) {
+        if (length(x) == 0 || is.na(x)) return("NA")
+        if (is.numeric(x)) return(formatC(x, digits = 6, format = "fg", flag = "#"))
+        as.character(x)
+      }))
+      risk_txt <- paste(lines, collapse = "\n")
+    } else {
+      risk_txt <- as.character(risk_metrics)
+    }
+  }
+  
+  # 실제 운용을 해보니 아래의 자연어로 된 Prompt Engineering도 무척 중요
+  # 제미나이가 사용자가 듣기 좋은 말만 하거나 환각에 빠지지 않도록 규칙을 잘 정해야 함
+  paste0(
+    "[Fund Name] : ", fund_name, "
+[Report Time] : ", report_time_kst, " (KST)
+
+당신은 **“기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저”**입니다.
+아래 Portfolio Management System(PMS) 출력 데이터만을 근거로,
+‘오늘의 투자운용 현황’에 대한 일일 운용 코멘트를 전문적으로 작성하세요.
+
+[필수 규칙]
+
+예측·단정 금지
+입력 데이터에 없는 지표(예: Ulcer Index 등)는 절대 언급하지 말 것.
+
+행동 지시 금지
+매수·매도·비중 조정·투자 권유 등 행동을 유도하거나 지시하는 표현 금지
+(해석·상태 설명만 허용).
+
+**Return_NAV(계좌 변화)**와 **Return_TWR(운용 성과)**의 차이를 반드시 설명할 것.
+
+많이 차이나면 원달러 환율의 급등과 급락 등의 요인이 주 원인일 수 있다고 밝히되 확정적으로 표현하지 말것.
+
+핵심 판단 축은 **운용 상태(신호등 배지)**와 Drawdown(DD) 및 리스크 지표임.
+
+숫자는 아래 입력 데이터에서만 인용, 단위(원/%) 정확히 표기할 것.
+
+존댓말, 간결하고 기관 운용 리포트 톤 유지.
+
+**Flow(입출금/매매)**는 입력 데이터에 명시되지 않으면 언급하지 말 것.
+
+입력 데이터와 모순되는 원인(예: Flow=0인데 자금 유출 확정 서술)은
+절대 ‘확정’으로 표현하지 말 것.
+
+입력으로 확인되지 않은 원인은 반드시
+**“가능성” 또는 “확인 불가”**로만 표현할 것.
+
+성과 요약 시
+Return_NAV과 Return_TWR의 차이가 존재하면,
+아래 순서로 **‘원인 후보’**를 나열할 것:
+
+(1) Flow
+(2) 배당/세금/수수료 반영 시점
+(3) 환율/헤지
+(4) 데이터 소스/반올림
+
+단, **입력 데이터로 명시적으로 확인된 항목만 ‘확정’**으로 서술하고,
+그 외는 반드시 **“가능성” 또는 “확인 불가”**로 표현할 것.
+
+입력 데이터에 명시되지 않은 사건
+(예: 전일 자금 이동, 회계적 이월 처리, 시스템 내부 보정 등)은
+절대 가정하거나 서술하지 말 것.
+
+입력 데이터와 모순되는 원인에
+‘추정’, ‘확정’, ‘결정적’ 등의 표현 사용 금지.
+
+원인 분석이 불가능한 경우,
+반드시 **“원인 불명(데이터 부족)”**으로 결론을 유보할 것.
+
+Flow 관련 보조 규칙:
+입력 데이터 상 **‘금일 Flow = 0원’**으로 확인되며,
+이에 반하는 추가 자금 이동의 근거는 입력에 존재하지 않음.
+→ 따라서 NAV–TWR 괴리의 원인으로 확정할 수 없음.
+
+데이터 미제공 또는 확인 불가 상태에서는
+긍정·부정 평가를 내리지 말고,
+반드시 **‘평가 유보’**로 표현할 것.
+
+[출력 형식]
+
+A) 현재 보고 시각과 오늘 한 줄 결론
+
+B) 운용 상태(GREEN / YELLOW / RED)와 근거
+
+상태 분류와 그 근거만 설명할 것
+
+GREEN일 경우에도 행동 권유 문구는 포함하지 말 것
+
+“추가적인 개입 신호는 관찰되지 않음” 수준으로 표현
+
+C) 성과 요약(Return_NAV vs Return_TWR)
+
+차이가 있을 경우, 원인을
+(1) Flow → (2) 배당/세금/수수료 → (3) 환율/헤지 → (4) 데이터 소스/반올림
+순서로 제시
+
+입력으로 확인된 것만 ‘확정’, 나머지는 ‘가능성’ 또는 ‘확인 불가’
+
+D) 리스크 / 드로다운 요약 (DD + MDD)
+
+DD 현재 수준
+
+관측 기간 내 MDD 위치 설명
+
+평가가 아닌 상태 진술 중심
+
+E) 위험관리 지표 설명
+
+입력으로 제공된 모든 리스크 지표를 빠짐없이 1줄씩 설명
+
+“높을수록/낮을수록 바람직한지”는 일반적 정의로만 설명
+
+수치 미제공 시 평가는 유보
+
+F) 데이터 / 운영상 이슈 (경고 / 오류)
+
+G) 원칙 리마인드 (규칙 유지 / 행동 없음)
+
+사전 정의된 운용 규칙에 따른 상태 유지 문구만 사용
+
+H) 시장 지표 요약
+
+오늘의 미국 주식시장 상황 1줄
+
+현재 원·달러 환율 숫자 + 환율 동향 1줄
+
+미국 IEF ETF가 참고하는 미국채 수익률을 숫자로 1줄
+
+I) 오늘의 주식투자 격언을 랜덤하게 골라서 1줄
+
+<입력 데이터>
+
+=== [0] 금일 자금흐름/거래 여부(중요) ===
+", flow_text, "
+
+=== [1] 배지/상태 메시지 ===
+", badge_txt, "
+
+=== [2] 성과 요약표 (최근 ", take_last_n_days, "일) ===
+", paste(tab_txt, collapse = "\n"), "
+
+=== [3] Drawdown(현재) ===
+DD_now = ", sprintf("%.6f", dd_now), "
+(예: -0.120000 은 고점 대비 -12%)
+
+=== [3-1] 리스크 지표(PMS 계산값: 아래 항목 전부 설명) ===
+", risk_txt, "
+
+=== [4] Warnings ===
+", warn_txt, "
+
+=== [5] Errors ===
+", err_txt, "
+
+위 입력만으로 작성하세요. 맨위의 [Fund Name], [Report Time]문구 자체는 표시하지 말기 바람.
+최고의 개인투자 포트폴리오 모니터링 시스템을 통해 관찰하고 있다는 안내문으로 끝내줘.
+"
+  )
+}
+
+
+# ---- 2) 변경 시에만 저장 ----
+save_if_changed <- function(text, file_path) {
+  old <- if (file.exists(file_path)) paste(readLines(file_path, warn = FALSE), collapse = "\n") else ""
+  if (!identical(old, text)) {
+    writeLines(text, file_path, useBytes = TRUE)
+    return(TRUE)
+  }
+  FALSE
+}
+
+# ---- 3) 배지 계산 함수 ----
+make_badge_text <- function(sum_xts, GLD_MODE) {
+  dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
+  
+  if (isTRUE(GLD_MODE)) {
+    "현재 운용 상태 :  RISK-OFF  → 신규적립 GLD"
+  } else if (!is.na(dd_now) && dd_now <= -0.12 && dd_now > -0.20) {
+    "현재 운용 상태 :  CAUTION  (DD 12~20% · 주의 관찰)"
+  } else {
+    "현재 운용 상태 :  NORMAL  (Risk-Off : OFF)"
+  }
+}
+
+# ---- 4) 주기적 저장 설정 ----
+PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
+UPDATE_EVERY_SEC <- 10  # ★ 10초마다(원하면 30, 60으로 바꾸세요)
+
+last_update_time <- Sys.time() - 9999  # 첫 루프에서 바로 저장되게
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # =========================================================
@@ -465,13 +703,25 @@ repeat {
           GLD_MODE <- (consecutive_days >= 63)
         }
         
+        
+        # 신호등 처럼 보이게 만드는 로직
+        # RISK-OFF가 OFF일 때 MDD가 12~20% 구간이면 주의, 관찰이 필요하다고 알림
+        dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
+        
         if (GLD_MODE) {
+          # 🔴 Risk-Off
           badge_text  <- "현재 운용 상태 :  RISK-OFF  → 신규적립 GLD"
           badge_color <- "firebrick"
+        } else if (!is.na(dd_now) && dd_now <= -0.12 && dd_now > -0.20) {
+          # 🟡 주의 관찰
+          badge_text  <- "현재 운용 상태 :  CAUTION  (DD 12~20% · 주의 관찰)"
+          badge_color <- "goldenrod"
         } else {
+          # 🟢 정상
           badge_text  <- "현재 운용 상태 :  NORMAL  (Risk-Off : OFF)"
           badge_color <- "darkgreen"
         }
+        
         
         # ---------- PerformanceAnalytics 라벨용 ----------
         ret_xts_clean <- na.omit(ret_xts)
@@ -1075,6 +1325,7 @@ repeat {
         # Return_TWR와 Drawdown(dd)만 보면 됨
         # 요약 : 화면에 표시되어 체감되는 “수익률”은
         # NAV(계좌 기준) 수익률이며, 운용 판단에 써야 할 수익률은 TWR
+        # 즉, NAV은	내 자산이 원화로 얼마나 변했나 판단 TWR(PWR)은 투자 자체가 잘 됐나 판단(따라서 환율급등락시 차이가 있을 수 있음)
       }
     }
     
@@ -1086,6 +1337,50 @@ repeat {
       format(Sys.time(), "%Y년 %m월 %d일 %H시 %M분 %S초"), "\n\n", sep="")
   
   count <- count + 1
+  
+  
+  
+  
+  
+  
+  
+  # 프롬프트 텍스트 생성
+  # ----------------------------------------------------------
+  # (B) 주기적 프롬프트 파일 갱신 (이 블록이 핵심)
+  # ----------------------------------------------------------
+  now <- Sys.time()
+  if (as.numeric(difftime(now, last_update_time, units = "secs")) >= UPDATE_EVERY_SEC) {
+    
+    # dd/sum_xts가 준비된 경우에만 갱신
+    if (exists("dd") && exists("sum_xts")) {
+      
+      # GLD_MODE가 아직 없으면 FALSE로 취급(안전)
+      gld_mode_now <- if (exists("GLD_MODE")) isTRUE(GLD_MODE) else FALSE
+      
+      badge_text <- make_badge_text(sum_xts, gld_mode_now)
+      
+      # warnings_vec/errors_vec는 없으면 빈 벡터
+      warnings_vec <- if (exists("warnings_vec")) warnings_vec else character(0)
+      errors_vec   <- if (exists("errors_vec"))   errors_vec   else character(0)
+      
+      prompt_text <- make_gemini_prompt_pms(
+        dd = dd,
+        sum_xts = sum_xts,
+        badge_text = badge_text,
+        warnings_vec = warnings_vec,
+        errors_vec = errors_vec,
+        take_last_n_days = 2
+      )
+      
+      changed <- save_if_changed(prompt_text, PROMPT_FILE)
+      if (changed) {
+        message("[Prompt Updated] ", PROMPT_FILE, " @ ", format(now, "%H:%M:%S"))
+      }
+      
+      last_update_time <- now
+    }
+  }
+  
   
   wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
   Sys.sleep(wait_min * 60)
