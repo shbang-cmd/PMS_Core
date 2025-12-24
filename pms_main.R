@@ -1069,6 +1069,7 @@ repeat {
           
           # 두 그래프에 공통으로 적용할 X축 범위를 계산
           common_date_range <- range(dd_plot_base$Date, na.rm = TRUE)
+          common_date_range[2] <- common_date_range[2] + 2  # 그래프 오른쪽에 여유가 생기도록 2일 여유를 둠
           
           # ---------- 상단 플롯(p) ----------
           p <- ggplot(dd_plot_base, aes(x = Date)) +
