@@ -24,8 +24,8 @@
 # ========================================================
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
-         "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod", "xts",
-         "rugarch", "htmltools")  
+         "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod", 
+         "xts", "rugarch", "htmltools")  
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 

@@ -34,7 +34,6 @@ run_factor_model_from_files <- function(asset_returns_file, factors_file, weight
   port_ret <- as.numeric(as.matrix(asset_df[, common_assets]) %*% as.numeric(w))
   port_df  <- data.frame(Date = asset_df$Date, port = port_ret)
   
-  # --- 팩터(X): YM은 버리고, MKT/VALUE/GROWTH/MOM만 사용 ---
   need <- c("MKT","VALUE","GROWTH","MOM")
   miss <- setdiff(need, names(factor_df))
   if (length(miss) > 0) stop(paste("factors_file에 컬럼이 없습니다:", paste(miss, collapse=", ")))
