@@ -171,9 +171,9 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
   # chatgpt, gemini의 API 를 이용하는 방법도 있으나 너무 복잡하고 유료서비스라 간단하게 Prompt만 생성함
   paste0(
     
-"[Fund Name] : ", fund_name, "[Report Time] : ", report_time_kst, 
-
-" 
+"[Fund Name] : ", fund_name, "\n",
+"[Report Time] : ", report_time_kst, "\n",
+"
 (KST) 당신은 **“기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저”**입니다.
 
 아래 Portfolio Management System(PMS) 출력 데이터만을 근거로,
@@ -198,6 +198,8 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
 핵심 판단 축은 **운용 상태(신호등 배지)**와 Drawdown(DD) 및 리스크 지표임.
 
 숫자는 아래 입력 데이터에서만 인용, 단위(원/%) 정확히 표기할 것.
+
+입력 데이터에서 Flow가 명시되지 않는 경우 Flow 관련 결론은 유보.
 
 존댓말, 간결하고 기관 운용 리포트 톤 유지.
 
@@ -494,10 +496,8 @@ repeat {
       
       # ret_xts 계산 (NAV 기반)
       if (NROW(sum_xts) >= 2) {
-        ret_xts <- Return.calculate(sum_xts, method="discrete") # 자산 가치의 변화율을 계산
-        # 결측치 제거 및 첫 행 처리
-        ret_xts <- ret_xts[!is.na(ret_xts)]
-        if (NROW(ret_xts) >= 1) ret_xts <- ret_xts[-1]
+        ret_xts <- Return.calculate(sum_xts, method="discrete")
+        ret_xts <- na.omit(ret_xts)   
         if (NROW(ret_xts) < 1) ret_xts <- xts()
       } else {
         ret_xts <- xts()
