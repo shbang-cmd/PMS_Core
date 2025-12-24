@@ -1,20 +1,64 @@
 ###############################################################################
-# risk_module.R  (JS 펀드용 리스크 분석 모듈 - 확장 버전)
-#
-# 포함 기능:
-#  0) dd로부터 "현금흐름 보정 일별 운용수익률" 계산
-#  1) 포트폴리오 μ, σ 추정 (연 기대수익률, 변동성)
-#  2) 적립식 몬테카를로 (10년 후 평가액 분포)
-#  3) 미래 최대낙폭(MDD) 분포 시뮬레이션
-#  4) 은퇴 후 인출 시나리오 Monte Carlo (initial_value로 시작자산 지정 가능)
-#  5) 팩터 회귀 분석 (Factor model)
-#  6) PCA 기반 리스크 분해 (Risk via PCA)
+# risk_module.R  (리스크 분석 모듈 모음)
 ###############################################################################
 
-library(dplyr)
+suppressMessages(library(dplyr))
+
+# ---- GARCH용 패키지 체크 ------------------------------------
+.has_rugarch <- requireNamespace("rugarch", quietly = TRUE)
 
 ###############################################################################
-# 0. dd로부터 "현금흐름 보정 일별 운용수익률" 계산
+# 0) 파일 기반 팩터 회귀 (Date 키 고정 버전)
+###############################################################################
+run_factor_model_from_files <- function(asset_returns_file, factors_file, weights) {
+  
+  asset_df  <- readr::read_csv(asset_returns_file,  show_col_types = FALSE)
+  factor_df <- readr::read_csv(factors_file,        show_col_types = FALSE)
+  
+  # --- 키는 Date로 고정 (YM은 절대 쓰지 않음) ---
+  if (!("Date" %in% names(asset_df)))  stop("asset_returns_file에 Date 컬럼이 없습니다.")
+  if (!("Date" %in% names(factor_df))) stop("factors_file에 Date 컬럼이 없습니다.")
+  
+  # --- 포트수익률(Y) 생성: asset returns × weights ---
+  if (is.null(names(weights)) || any(names(weights) == "")) {
+    stop("weights는 names가 있어야 합니다. 예: c(SPY=0.4, SCHD=0.2, ...)")
+  }
+  
+  asset_cols <- setdiff(names(asset_df), "Date")
+  common_assets <- intersect(asset_cols, names(weights))
+  if (length(common_assets) < 2) stop("asset_returns 자산명과 weights names 매칭이 부족합니다.")
+  
+  w <- weights[common_assets]
+  w <- w / sum(w)
+  
+  port_ret <- as.numeric(as.matrix(asset_df[, common_assets]) %*% as.numeric(w))
+  port_df  <- data.frame(Date = asset_df$Date, port = port_ret)
+  
+  # --- 팩터(X): YM은 버리고, MKT/VALUE/GROWTH/MOM만 사용 ---
+  need <- c("MKT","VALUE","GROWTH","MOM")
+  miss <- setdiff(need, names(factor_df))
+  if (length(miss) > 0) stop(paste("factors_file에 컬럼이 없습니다:", paste(miss, collapse=", ")))
+  
+  fact_df2 <- factor_df %>% dplyr::select(Date, dplyr::all_of(need))
+  
+  # --- Date로 병합 ---
+  dat <- dplyr::inner_join(port_df, fact_df2, by = "Date") %>% stats::na.omit()
+  if (nrow(dat) < 24) stop("팩터회귀 표본이 너무 적습니다(24개월 미만).")
+  
+  fit <- lm(port ~ MKT + VALUE + GROWTH + MOM, data = dat)
+  
+  cat("========================================\n")
+  cat(" 팩터 회귀모형 결과\n")
+  cat(" 포트 수익률 ~ MKT + VALUE + GROWTH + MOM\n")
+  cat(" (표본:", nrow(dat), "개월)\n")
+  cat("========================================\n\n")
+  print(summary(fit))
+  
+  invisible(fit)
+}
+
+###############################################################################
+# 0. dd로부터 "현금흐름 보정 일별 운용수익률" 계산  (방탄/Date 정렬 유지)
 ###############################################################################
 # dd: 최소한 아래 컬럼을 가져야 함
 #   - Date  : 날짜 (Date 형)
@@ -26,42 +70,39 @@ library(dplyr)
 #   Flow_t      = Invested_t - Invested_{t-1} (t일에 외부에서 새로 들어온/나간 돈)
 #   Sum_t       = (Sum_{t-1} + Flow_t) * (1 + r_t)
 #   ⇒ r_t       = Sum_t / (Sum_{t-1} + Flow_t) - 1
+#
+# [중요 수정]
+# - 기존 버전처럼 NA 제거/클리핑으로 "벡터 길이를 줄여 반환"하면
+#   메인에서 dd와 Return 매칭이 깨질 수 있습니다.
+# - 따라서 Date별 Return을 NA 포함으로 유지하여 data.frame으로 반환합니다.
 ###############################################################################
-compute_daily_returns_from_dd <- function(dd) {
+compute_daily_returns_from_dd <- function(dd, ret_clip = 0.5) {
   dd <- dd %>% arrange(Date)
   
-  if (!all(c("Sum", "Profit") %in% colnames(dd))) {
-    stop("compute_daily_returns_from_dd: dd에 'Sum'과 'Profit' 컬럼이 필요합니다.")
+  if (!all(c("Date","Sum","Profit") %in% colnames(dd))) {
+    stop("compute_daily_returns_from_dd: dd에 'Date','Sum','Profit' 컬럼이 필요합니다.")
   }
   
-  dd <- dd %>%
+  dd2 <- dd %>%
     mutate(
       Invested      = Sum - Profit,             # 누적 투자원금
       Invested_lag  = dplyr::lag(Invested),
       Sum_lag       = dplyr::lag(Sum),
       Flow          = Invested - Invested_lag,  # t일에 새로 들어온 순 현금
-      Gross_base    = Sum_lag + Flow,          # 운용 대상 자산
-      DailyRet_raw  = if_else(
+      Gross_base    = Sum_lag + Flow,           # 운용 대상 자산
+      Return        = dplyr::if_else(
         !is.na(Gross_base) & Gross_base > 0,
         Sum / Gross_base - 1,
         NA_real_
       )
     )
   
-  r_daily <- dd$DailyRet_raw
-  r_daily <- r_daily[!is.na(r_daily)]
-  if (length(r_daily) == 0) {
-    stop("compute_daily_returns_from_dd: 유효한 수익률이 없습니다.")
-  }
-  
   # ±50% 이상은 데이터 오류/극단값 가능성이 커서 제거(원하면 주석 처리 가능)
-  r_daily <- r_daily[abs(r_daily) < 0.5]
+  dd2 <- dd2 %>%
+    mutate(Return = dplyr::if_else(!is.na(Return) & abs(Return) < ret_clip, Return, NA_real_))
   
-  if (length(r_daily) < 10) {
-    warning("compute_daily_returns_from_dd: 유효한 일별 수익률이 10개 미만입니다. 추정치 신뢰도가 낮을 수 있습니다.")
-  }
-  
-  return(r_daily)
+  # ✅ Date별 Return 유지 (NA 포함)
+  dd2 %>% dplyr::select(Date, Return)
 }
 
 ###############################################################################
@@ -80,7 +121,16 @@ estimate_mu_sigma_from_dd <- function(dd) {
     stop("estimate_mu_sigma_from_dd: dd에 최소 2개 이상의 행이 필요합니다.")
   }
   
-  r_daily <- compute_daily_returns_from_dd(dd)
+  ret_df <- compute_daily_returns_from_dd(dd)
+  r_daily <- ret_df$Return
+  r_daily <- r_daily[is.finite(r_daily)]
+  
+  if (length(r_daily) == 0) {
+    stop("estimate_mu_sigma_from_dd: 유효한 일별 수익률이 없습니다.")
+  }
+  if (length(r_daily) < 10) {
+    warning("estimate_mu_sigma_from_dd: 유효한 일별 수익률이 10개 미만입니다. 추정치 신뢰도가 낮을 수 있습니다.")
+  }
   
   mu_daily    <- mean(r_daily, na.rm = TRUE)
   sigma_daily <- sd(r_daily,   na.rm = TRUE)
@@ -97,7 +147,7 @@ estimate_mu_sigma_from_dd <- function(dd) {
 }
 
 ###############################################################################
-# 2. 적립식 몬테카 (현역기 - accumulation phase)
+# 2. 적립식 몬테카를로 (현역기 - accumulation phase)
 ###############################################################################
 # 입력:
 #   dd              : Date, Sum, Profit 포함
@@ -165,11 +215,6 @@ run_mc_from_dd <- function(dd,
 
 ###############################################################################
 # 3. 미래 최대낙폭(MDD) 분포 시뮬레이션
-###############################################################################
-# run_future_mdd_from_dd:
-#   - 적립 여부를 포함한 전체 경로를 여러 번 시뮬레이션
-#   - 각 시뮬레이션 경로에서 최대낙폭(MDD)을 계산
-#   - MDD(%) 분포의 분위수를 출력
 ###############################################################################
 run_future_mdd_from_dd <- function(dd,
                                    years = 10,
@@ -241,20 +286,6 @@ run_future_mdd_from_dd <- function(dd,
 
 ###############################################################################
 # 4. 은퇴 후 인출 시나리오 Monte Carlo (decumulation phase)
-###############################################################################
-# run_mc_withdraw_from_dd:
-#   - 시작 시점 자산: 기본은 dd$Sum 마지막 값
-#   - initial_value 인자를 주면 그 값을 시작자산으로 사용 (예: 10년 후 예상자산)
-#   - 이후 적립 없음, 대신 매년/매월 고정 금액 인출
-#   - 자산이 0 이하로 떨어지면 "파산" 처리
-#
-# 입력:
-#   dd                : Date, Sum, Profit 포함
-#   years             : 은퇴 후 시뮬레이션 기간 (예: 30년)
-#   annual_withdraw   : 연 인출액(원)
-#   n_sims            : 시뮬레이션 수
-#   withdraw_freq     : "annual" 또는 "monthly"
-#   initial_value     : 시작자산(원), NULL이면 tail(dd$Sum,1) 사용
 ###############################################################################
 run_mc_withdraw_from_dd <- function(dd,
                                     years = 30,
@@ -365,154 +396,71 @@ run_mc_withdraw_from_dd <- function(dd,
 }
 
 ###############################################################################
-# 5. 팩터별 분석 (Factor Regression)
-###############################################################################
-#   port_ret  : 포트폴리오 수익률 벡터 (월별 수익률 권장)
-#   factors_df: data.frame, 열 = 각 팩터 (MKT, GOLD, RATE 등)
+# 5. 팩터별 분석 (Factor Regression) - 방탄 버전
 ###############################################################################
 run_factor_model <- function(port_ret, factors_df) {
+  
+  # ---------------------------
+  # ✅ 방탄 1) factors_df 비정상 입력 방어
+  # ---------------------------
+  if (is.null(port_ret) || length(port_ret) == 0) {
+    stop("run_factor_model: port_ret 길이가 0입니다.")
+  }
+  if (is.null(factors_df) || nrow(factors_df) == 0) {
+    stop("run_factor_model: factors_df가 비어있습니다.")
+  }
+  
+  # ---------------------------
+  # ✅ 방탄 2) 날짜/키 컬럼 제거 (회귀 X에 들어가면 망함)
+  # ---------------------------
+  drop_cols <- intersect(names(factors_df), c("YM", "Ym", "ym", "DATE", "Date", "date"))
+  if (length(drop_cols) > 0) {
+    factors_df <- factors_df[, setdiff(names(factors_df), drop_cols), drop = FALSE]
+  }
+  
+  # ---------------------------
+  # ✅ 방탄 3) 숫자형 컬럼만 남기기
+  # ---------------------------
+  is_num <- vapply(factors_df, function(x) is.numeric(x) || is.integer(x), logical(1))
+  factors_df <- factors_df[, is_num, drop = FALSE]
+  
+  if (ncol(factors_df) == 0) {
+    stop("run_factor_model: 회귀에 사용할 numeric 팩터 컬럼이 0개입니다. (YM/Date만 있었던 케이스)")
+  }
+  
+  # ---------------------------
+  # ✅ 방탄 4) 길이 일치 / NA 정리
+  # ---------------------------
   if (length(port_ret) != nrow(factors_df)) {
-    stop("run_factor_model: 포트 수익률 길이와 factors_df 행 수가 같아야 합니다.")
+    stop(sprintf("run_factor_model: 길이 불일치 port_ret=%d, factors_df=%d",
+                 length(port_ret), nrow(factors_df)))
   }
   
   dat <- data.frame(port = port_ret, factors_df)
-  form <- as.formula(
-    paste("port ~", paste(colnames(factors_df), collapse = " + "))
-  )
+  dat <- na.omit(dat)
   
+  if (nrow(dat) < 12) {
+    stop("run_factor_model: 유효표본이 너무 적습니다(NA 제거 후 12개 미만).")
+  }
+  
+  form <- as.formula(paste("port ~", paste(colnames(dat)[-1], collapse = " + ")))
   fit <- lm(form, data = dat)
   
   cat("========================================\n")
   cat(" 팩터 회귀모형 결과\n")
-  cat(" 포트 수익률 ~", paste(colnames(factors_df), collapse = " + "), "\n")
+  cat(" 포트 수익률 ~", paste(colnames(dat)[-1], collapse = " + "), "\n")
   cat("========================================\n\n")
   print(summary(fit))
-  cat("\n(해석)\n")
-  cat("- 각 팩터의 계수(Estimate)가 해당 팩터에 대한 민감도(β)입니다.\n")
-  cat("- 예) MKT 계수 1.2 → 시장이 1% 오르면 포트는 평균 1.2% 수익\n")
-  cat("- R-squared → 팩터들로 설명되는 비율(설명력)\n\n")
   
   invisible(fit)
 }
 
 ###############################################################################
-# 6. PCA 기반 리스크 분해 (Risk via PCA)
+# 6. quantmod 기반 월간 자산수익률 + 팩터 CSV 업데이트
 ###############################################################################
-#   asset_returns: (날짜 x 자산) 수익률 data.frame
-#   weights      : 해당 자산의 포트 비중 (합계 = 1)
-###############################################################################
-###############################################################
-# PCA 기반 리스크 분해 + 자동 해석 메시지 포함
-###############################################################
-run_pca_risk <- function(asset_returns, weights, scale. = TRUE) {
-  suppressMessages(library(dplyr))
-  
-  asset_returns <- as.data.frame(asset_returns)
-  
-  if (ncol(asset_returns) != length(weights)) {
-    stop("run_pca_risk: 자산 열 개수와 weights 길이가 같아야 합니다.")
-  }
-  
-  # 비중 정규화
-  if (abs(sum(weights) - 1) > 1e-6) {
-    weights <- weights / sum(weights)
-  }
-  
-  # NA 제거 후 공분산 계산
-  ret_clean <- asset_returns[stats::complete.cases(asset_returns), ]
-  cov_mat   <- stats::cov(ret_clean)
-  
-  # PCA 수행
-  pca_res <- stats::prcomp(ret_clean, center = TRUE, scale. = scale.)
-  eig     <- eigen(cov_mat)
-  lambda  <- eig$values
-  phi     <- eig$vectors
-  
-  # 포트폴리오 리스크 기여도 계산
-  pc_contrib <- numeric(length(lambda))
-  for (k in seq_along(lambda)) {
-    loading_k     <- sum(weights * phi[, k])
-    pc_contrib[k] <- lambda[k] * loading_k^2
-  }
-  pc_ratio <- pc_contrib / sum(pc_contrib)
-  
-  ####### ------------- 자동 해석 파트 ---------------- #######
-  
-  # 1) 주요 PC들 식별
-  pc1_load <- phi[, 1]
-  pc2_load <- phi[, 2]
-  pc3_load <- phi[, 3]
-  
-  asset_names <- colnames(asset_returns)
-  
-  # 방향성 무의미 → 절대값 기준으로 정렬
-  top_pc1 <- asset_names[order(abs(pc1_load), decreasing = TRUE)][1:4]
-  top_pc2 <- asset_names[order(abs(pc2_load), decreasing = TRUE)][1:3]
-  top_pc3 <- asset_names[order(abs(pc3_load), decreasing = TRUE)][1:3]
-  
-  # 2) 리스크 설명 비율
-  pc1_ratio <- pc_ratio[1]
-  pc2_ratio <- pc_ratio[2]
-  pc3_ratio <- pc_ratio[3]
-  
-  # 3) 해석 메시지 생성
-  cat("\n========================================\n")
-  cat(" PCA 기반 리스크 자동 해석\n")
-  cat("========================================\n")
-  
-  cat(sprintf("\n[1] PC1 요인이 전체 포트폴리오 변동성의 %.1f%%를 설명합니다.\n",
-              pc1_ratio * 100))
-  cat("    → PC1을 구성하는 주요 자산: ", paste(top_pc1, collapse=", "), "\n")
-  
-  if (all(grepl("SPY|SCHD|QQQ|TQQQ", top_pc1))) {
-    cat("    → 해석: 미국 주식(대형주/성장/배당/나스닥) 공통 요인이 JS 펀드 리스크의 핵심 원천입니다.\n")
-  }
-  
-  cat(sprintf("\n[2] PC2 요인은 전체 변동성의 %.1f%%를 설명합니다.\n",
-              pc2_ratio * 100))
-  cat("    → PC2 구성 주요 자산: ", paste(top_pc2, collapse=", "), "\n")
-  
-  if (any(grepl("GLD", top_pc2)) && any(grepl("IEF", top_pc2))) {
-    cat("    → 해석: 금(GLD)과 국채(IEF)의 방어적 요인입니다.\n")
-    cat("      시장 급락 시 손실을 완충하는 역할을 하는 요인입니다.\n")
-  }
-  
-  cat(sprintf("\n[3] PC3 요인은 전체 변동성의 %.1f%%를 설명합니다.\n",
-              pc3_ratio * 100))
-  cat("    → PC3 구성 주요 자산: ", paste(top_pc3, collapse=", "), "\n")
-  
-  if (("GLD" %in% top_pc3) && ("IEF" %in% top_pc3)) {
-    cat("    → 해석: 금과 채권의 상대 가치 요인(인플레이션 vs 금리)입니다.\n")
-  }
-  
-  ###### --- 기존 출력 (표, 회전행렬, summary) 유지 --- ######
-  
-  cat("\n----------------------------------------\n")
-  cat(" 기술적 출력 (PC별 설명력 / 로딩 매트릭스)\n")
-  cat("----------------------------------------\n\n")
-  
-  print(summary(pca_res))
-  
-  pc_table <- data.frame(
-    PC = paste0("PC", seq_along(lambda)),
-    PortVar_Contribution = pc_ratio
-  )
-  print(pc_table)
-  
-  cat("\n[로딩 행렬]\n")
-  print(pca_res$rotation)
-  
-  invisible(list(
-    pca = pca_res,
-    pc_ratio = pc_ratio,
-    rotation = pca_res$rotation
-  ))
-}
-
-
 update_factor_data <- function(symbols = c("SPY","SCHD","QQQ","TQQQ","GLD","IEF"),
                                start_date = "2010-01-01",
-                               save_path = "c:/easy_r") {
+                               save_path = getwd()) {
   
   suppressMessages(library(quantmod))
   suppressMessages(library(dplyr))
@@ -555,7 +503,6 @@ update_factor_data <- function(symbols = c("SPY","SCHD","QQQ","TQQQ","GLD","IEF"
   cat("[팩터/자산수익률 데이터 자동 업데이트 완료]\n")
 }
 
-
 ###############################################################
 # (1) CSV 불러와서 팩터 회귀 & 요약 출력하는 함수
 ###############################################################
@@ -577,7 +524,7 @@ run_factor_dashboard_from_file <- function(dd, factor_file = "factors_monthly.cs
   dd_month <- dd %>%
     mutate(YM = format(Date, "%Y-%m")) %>%
     group_by(YM) %>%
-    summarise(Sum = last(Sum, order_by = Date)) %>%
+    summarise(Sum = last(Sum, order_by = Date), .groups="drop") %>%
     mutate(Return = Sum / lag(Sum) - 1) %>%
     drop_na()
   
@@ -586,13 +533,15 @@ run_factor_dashboard_from_file <- function(dd, factor_file = "factors_monthly.cs
   
   # 4) 회귀 준비
   fit <- lm(Return ~ MKT + VALUE + GROWTH + MOM, data = merged)
-  reg_summary <- summary(fit)
+  reg_summary <- summary(fit)   # ✅ [FIX] reg_summary 미정의 버그 수정
   
   cat("\n========================================\n")
   cat(" [리스크] 팩터별 요인 민감도(Factor Exposure) 분석\n")
   cat("========================================\n\n")
   
-  print(reg_summary)
+  s <- reg_summary
+  print(coef(s))
+  cat("\nR2:", s$r.squared, "AdjR2:", s$adj.r.squared, "\n")
   
   # 계수만 뽑기
   coef_df <- tidy(fit)
@@ -610,12 +559,6 @@ run_factor_dashboard_from_file <- function(dd, factor_file = "factors_monthly.cs
   return(list(model = fit, summary = reg_summary, coef = coef_df))
 }
 
-
-###############################################################
-# PCA 기반 리스크 분해
-#  - asset_returns: (T x N) 자산 수익률 데이터프레임 (열: 자산)
-#  - weights      : 길이 N인 포트폴리오 비중 벡터 (합=1 권장)
-###############################################################
 ###############################################################
 # PCA 기반 리스크 분해 + 자동 해석 메시지 포함
 ###############################################################
@@ -652,25 +595,20 @@ run_pca_risk <- function(asset_returns, weights, scale. = TRUE) {
   pc_ratio <- pc_contrib / sum(pc_contrib)
   
   ####### ------------- 자동 해석 파트 ---------------- #######
-  
-  # 1) 주요 PC들 식별
   pc1_load <- phi[, 1]
   pc2_load <- phi[, 2]
   pc3_load <- phi[, 3]
   
   asset_names <- colnames(asset_returns)
   
-  # 방향성 무의미 → 절대값 기준으로 정렬
-  top_pc1 <- asset_names[order(abs(pc1_load), decreasing = TRUE)][1:4]
-  top_pc2 <- asset_names[order(abs(pc2_load), decreasing = TRUE)][1:3]
-  top_pc3 <- asset_names[order(abs(pc3_load), decreasing = TRUE)][1:3]
+  top_pc1 <- asset_names[order(abs(pc1_load), decreasing = TRUE)][1:min(4, length(asset_names))]
+  top_pc2 <- asset_names[order(abs(pc2_load), decreasing = TRUE)][1:min(3, length(asset_names))]
+  top_pc3 <- asset_names[order(abs(pc3_load), decreasing = TRUE)][1:min(3, length(asset_names))]
   
-  # 2) 리스크 설명 비율
   pc1_ratio <- pc_ratio[1]
   pc2_ratio <- pc_ratio[2]
   pc3_ratio <- pc_ratio[3]
   
-  # 3) 해석 메시지 생성
   cat("\n========================================\n")
   cat(" PCA 기반 리스크 자동 해석\n")
   cat("========================================\n")
@@ -680,7 +618,7 @@ run_pca_risk <- function(asset_returns, weights, scale. = TRUE) {
   cat("    → PC1을 구성하는 주요 자산: ", paste(top_pc1, collapse=", "), "\n")
   
   if (all(grepl("SPY|SCHD|QQQ|TQQQ", top_pc1))) {
-    cat("    → 해석: 미국 주식(대형주/성장/배당/나스닥) 공통 요인이 JS 펀드 리스크의 핵심 원천입니다.\n")
+    cat("    → 해석: 미국 주식(대형주/성장/배당/나스닥) 공통 요인이 리스크의 핵심 원천입니다.\n")
   }
   
   cat(sprintf("\n[2] PC2 요인은 전체 변동성의 %.1f%%를 설명합니다.\n",
@@ -699,8 +637,6 @@ run_pca_risk <- function(asset_returns, weights, scale. = TRUE) {
   if (("GLD" %in% top_pc3) && ("IEF" %in% top_pc3)) {
     cat("    → 해석: 금과 채권의 상대 가치 요인(인플레이션 vs 금리)입니다.\n")
   }
-  
-  ###### --- 기존 출력 (표, 회전행렬, summary) 유지 --- ######
   
   cat("\n----------------------------------------\n")
   cat(" 기술적 출력 (PC별 설명력 / 로딩 매트릭스)\n")
@@ -724,66 +660,71 @@ run_pca_risk <- function(asset_returns, weights, scale. = TRUE) {
   ))
 }
 
-
-
-
 ###############################################################
-# CSV 기반 PCA 대시보드
-#  - asset_returns_file: asset_returns_monthly.csv
-#    (첫 열이 Date면 자동 제거 후 나머지 열을 자산으로 사용)
-#  - weights           : 포트폴리오 비중 벡터 (SPY,SCHD,QQQ,TQQQ,GLD,IEF 순 등)
+# CSV 기반 PCA 대시보드  (덮어쓰기 제거 + Date 제거 보장 버전)
 ###############################################################
-run_pca_dashboard_from_file <- function(asset_returns_file, weights) {
-  suppressMessages(library(readr))
+run_pca_dashboard_from_file <- function(asset_returns_file, weights, scale. = TRUE) {
   
-  if (!file.exists(asset_returns_file)) {
-    cat("[PCA] 자산 수익률 CSV 파일(", asset_returns_file,
-        ")이 없어 PCA 분석을 건너뜁니다.\n", sep = "")
+  # 1) CSV 로드
+  asset_df <- read.csv(asset_returns_file, stringsAsFactors = FALSE)
+  
+  # Date 컬럼 제거 (PCA 입력에 절대 포함되면 안 됨)
+  if ("Date" %in% names(asset_df)) {
+    asset_df <- asset_df[, names(asset_df) != "Date", drop = FALSE]
+  }
+  
+  # 컬럼명 정리
+  names(asset_df) <- trimws(names(asset_df))
+  
+  # weights 이름 체크
+  if (is.null(names(weights)) || any(names(weights) == "")) {
+    cat("[PCA] weights에 names가 없어 PCA를 건너뜁니다.\n")
     return(invisible(NULL))
   }
   
-  ar_raw <- read_csv(asset_returns_file, show_col_types = FALSE)
+  # ---------- [FIX] PCA용 이름 매핑 (weights -> returns 컬럼명) ----------
+  name_map <- c(
+    "SPY_ETC" = "SPY",   # returns 컬럼이 SPY인 경우
+    "GOLD"    = "GLD"    # returns 컬럼이 GLD인 경우
+  )
+  weights_pca <- weights
+  nm <- names(weights_pca)
+  nm <- ifelse(nm %in% names(name_map), unname(name_map[nm]), nm)
+  names(weights_pca) <- nm
+  # ---------------------------------------------------------------
   
-  # Date 컬럼이 있으면 제거 (나머지 열이 자산 수익률)
-  if ("Date" %in% names(ar_raw)) {
-    asset_returns <- ar_raw[, setdiff(names(ar_raw), "Date"), drop = FALSE]
-  } else {
-    asset_returns <- ar_raw
+  # 공통 자산만 사용
+  common_assets <- intersect(names(asset_df), names(weights_pca))
+  if (length(common_assets) < 2) {
+    cat("[PCA] 매칭되는 자산이 부족하여 PCA를 건너뜁니다.\n")
+    return(invisible(NULL))
   }
   
-  cat("\n[PCA] 월간 자산 수익률과 비중을 이용하여 PCA 리스크 분해를 수행합니다.\n")
-  cat("     (자산 열:", paste(colnames(asset_returns), collapse = ", "), ")\n\n")
+  # 공통자산으로 정렬 (열과 weights가 같은 순서가 되도록)
+  asset_returns_pca <- asset_df[, common_assets, drop = FALSE]
+  weights_use       <- weights_pca[common_assets]
   
-  run_pca_risk(asset_returns, weights, scale. = TRUE)
+  # 최종 방어
+  stopifnot(ncol(asset_returns_pca) == length(weights_use))
+  stopifnot(all(colnames(asset_returns_pca) == names(weights_use)))
+  
+  run_pca_risk(asset_returns_pca, weights_use, scale. = scale.)
 }
 
-###############################################################
+###############################################################################
 # (추가 모듈) 1단계 리스크 고도화:
 #  - Stress Test Replay
 #  - VaR / CVaR
 #  - DRIFT 기반 동적 리밸런싱 신호
-###############################################################
-
+###############################################################################
 suppressMessages({
   library(dplyr)
   library(readr)
 })
 
-###############################################################
+###############################################################################
 # 1) Stress Test Replay
-#    - 과거 위기 구간의 자산수익률을 현재 포트 비중에 적용해서
-#      "그때와 같은 장세가 다시 오면 JS 펀드가 어떻게 움직일지"를 리플레이
-#
-#  사용 예)
-#    weights <- c(SPY=0.4, SCHD=0.2, QQQ=0.15, TQQQ=0.1, GLD=0.1, IEF=0.05)
-#    current_nav <- tail(dd$Sum, 1)
-#    run_stress_replay_from_file(
-#      asset_file   = "asset_returns_monthly.csv",
-#      weights      = weights,
-#      current_nav  = current_nav,
-#      monthly_contrib = 0   # 위기 구간에서는 적립 없이 영향만 보고 싶을 때
-#    )
-###############################################################
+###############################################################################
 run_stress_replay_from_file <- function(
     asset_file      = "asset_returns_monthly.csv",
     weights,
@@ -805,7 +746,6 @@ run_stress_replay_from_file <- function(
   }
   rets$Date <- as.Date(rets$Date)
   
-  # 자산 열만 매트릭스로
   asset_cols <- setdiff(colnames(rets), "Date")
   R_mat      <- as.matrix(rets[, asset_cols])
   
@@ -813,12 +753,10 @@ run_stress_replay_from_file <- function(
     stop("Stress Test: weights 길이와 자산 열 개수가 다릅니다.")
   }
   
-  # 비중 정규화
   if (abs(sum(weights) - 1) > 1e-6) {
     weights <- weights / sum(weights)
   }
   
-  # MDD 계산용 헬퍼
   .calc_mdd_from_path <- function(nav_vec) {
     peak <- cummax(nav_vec)
     dd   <- nav_vec / peak - 1
@@ -833,7 +771,7 @@ run_stress_replay_from_file <- function(
   cat("========================================\n")
   cat(" 과거 위기 구간을 현재 포트 비중으로 리플레이합니다.\n")
   cat("  - 파일: ", asset_file, "\n")
-  cat("  - 현재 기준 JS 펀드 평가금: ", format(round(current_nav), big.mark = ","), "원\n")
+  cat("  - 현재 기준 평가금: ", format(round(current_nav), big.mark = ","), "원\n")
   cat("========================================\n\n")
   
   for (nm in names(crisis_periods)) {
@@ -846,14 +784,13 @@ run_stress_replay_from_file <- function(
       arrange(Date)
     
     if (nrow(sub) == 0) {
-      cat("[경고] ", nm, " 구간(Date: ", s_date, " ~ ", e_date, ") 데이터가 없습니다.\n\n")
+      cat("[경고] ", nm, " 구간(Date: ", format(s_date), " ~ ", format(e_date), ") 데이터가 없습니다.\n\n")
       next
     }
     
     R_sub <- as.matrix(sub[, asset_cols])
     port_ret <- as.numeric(R_sub %*% weights)  # 월간 포트 수익률
     
-    # 위기 구간 동안의 NAV 경로 (적립 포함)
     nav <- numeric(length(port_ret))
     nav[1] <- current_nav * (1 + port_ret[1]) + monthly_contrib
     if (length(port_ret) > 1) {
@@ -877,21 +814,9 @@ run_stress_replay_from_file <- function(
   invisible(NULL)
 }
 
-
-###############################################################
+###############################################################################
 # 2) VaR / CVaR 계산
-#    - asset_returns_monthly.csv + 현재 비중 + 현재 평가금으로
-#      월간 기준 VaR / CVaR(% 및 원화)을 계산
-#
-#  사용 예)
-#    current_nav <- tail(dd$Sum, 1)
-#    run_var_cvar_from_file(
-#      asset_file  = "asset_returns_monthly.csv",
-#      weights     = weights,
-#      current_nav = current_nav,
-#      alpha       = 0.95
-#    )
-###############################################################
+###############################################################################
 run_var_cvar_from_file <- function(
     asset_file  = "asset_returns_monthly.csv",
     weights,
@@ -928,7 +853,6 @@ run_var_cvar_from_file <- function(
     return(invisible(NULL))
   }
   
-  # 손실 기준으로 VaR 계산(+: 손실, -: 이익)
   q <- stats::quantile(port_ret, probs = 1 - alpha, na.rm = TRUE) # 하위 tail
   var_pct  <- -as.numeric(q)
   cvar_pct <- -mean(port_ret[port_ret <= q], na.rm = TRUE)
@@ -957,24 +881,9 @@ run_var_cvar_from_file <- function(
   ))
 }
 
-
-###############################################################
+###############################################################################
 # 3) DRIFT 기반 동적 리밸런싱 신호
-#    - 목표 비중 vs 현재 비중의 차이(Drift)를 보고
-#      어느 자산을 줄이고/늘릴지 신호를 출력
-#
-#  사용 예)
-#    target <- c(SPY_ETC=0.40, SCHD=0.20, QQQ=0.15, TQQQ=0.10, GLD=0.10, BOND=0.05)
-#    current<- c(SPY_ETC=asset_SPY_ETC_ratio/100,
-#                SCHD   =asset_SCHD_ratio/100,
-#                QQQ    =asset_QQQ_ratio/100,
-#                TQQQ   =asset_TQQQ_ratio/100,
-#                GLD    =asset_GLD_ratio/100,
-#                BOND   =asset_BOND_ratio/100)
-#    run_drift_rebal_signal(target, current, threshold = 0.05)
-#
-#  threshold = 0.05 → 5%P 이상 벗어난 경우만 리밸런싱 후보로 표시
-###############################################################
+###############################################################################
 run_drift_rebal_signal <- function(
     target_weights,
     current_weights,
@@ -984,15 +893,13 @@ run_drift_rebal_signal <- function(
     stop("DRIFT: target_weights와 current_weights의 길이가 다릅니다.")
   }
   
-  # 이름 정렬 통일
   if (!is.null(names(target_weights)) && !is.null(names(current_weights))) {
     all_names <- union(names(target_weights), names(current_weights))
     target_weights  <- target_weights[all_names]
     current_weights <- current_weights[all_names]
   }
   
-  # 0 또는 음수 방지 및 정규화
-  target_weights[target_weights < 0]  <- 0
+  target_weights[target_weights < 0]   <- 0
   current_weights[current_weights < 0] <- 0
   
   if (sum(target_weights) <= 0 || sum(current_weights) <= 0) {
@@ -1004,10 +911,10 @@ run_drift_rebal_signal <- function(
   
   diff <- current_norm - target_norm  # +: 목표보다 초과, -: 부족
   df <- data.frame(
-    Asset         = names(target_norm),
-    Target_Weight = round(target_norm * 100, 2),
-    Current_Weight= round(current_norm * 100, 2),
-    Drift_pctpt   = round(diff * 100, 2)
+    Asset          = names(target_norm),
+    Target_Weight  = round(target_norm * 100, 2),
+    Current_Weight = round(current_norm * 100, 2),
+    Drift_pctpt    = round(diff * 100, 2)
   )
   
   cat("\n[리스크] DRIFT 기반 리밸런싱 신호\n")
@@ -1018,7 +925,6 @@ run_drift_rebal_signal <- function(
   print(df, row.names = FALSE)
   cat("----------------------------------------\n")
   
-  # 리밸런싱 후보만 필터
   idx <- which(abs(diff) >= threshold)
   if (length(idx) == 0) {
     cat("※ 모든 자산의 드리프트가 ±", threshold * 100,
@@ -1043,7 +949,120 @@ run_drift_rebal_signal <- function(
   invisible(df)
 }
 
-
+# ============================================================
+#  GARCH 기반 변동성 위험 경보(Alert) 시스템
+# ============================================================
+run_garch_vol_alert <- function(dd, min_obs = 250,
+                                normal_thr = 1.2,
+                                alert_thr  = 1.8) {
+  cat("\n[리스크] GARCH 기반 변동성 위험 경보(Alert) 실행...\n")
+  cat(strrep("=", 80), "\n")
+  
+  if (!.has_rugarch) {
+    cat("[경고] 'rugarch' 패키지가 설치되어 있지 않아 GARCH 경보를 건너뜁니다.\n")
+    cat("       install.packages('rugarch') 후 다시 실행하세요.\n")
+    return(invisible(NULL))
+  }
+  
+  # 1) 수익률 벡터 확보 ----------------------------------------
+  if (!("Return_TWR" %in% names(dd))) {
+    cat("[경고] dd에 'Return_TWR' 컬럼이 없어 GARCH 분석을 건너뜁니다.\n")
+    return(invisible(NULL))
+  }
+  
+  ret <- as.numeric(dd$Return_TWR)
+  ret <- ret[is.finite(ret)]
+  
+  if (length(ret) < min_obs) {
+    cat("[경고] GARCH 적합을 위한 최소 관측치(", min_obs,
+        "개) 보다 적어 분석을 건너뜁니다. (현재:", length(ret), "개)\n")
+    return(invisible(NULL))
+  }
+  
+  # 2) GARCH(1,1) 모형 정의 및 적합 ----------------------------
+  rugarch <- asNamespace("rugarch")
+  
+  spec <- rugarch$ugarchspec(
+    variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+    mean.model     = list(armaOrder = c(1, 0), include.mean = TRUE),
+    distribution.model = "norm"
+  )
+  
+  fit <- try(
+    rugarch$ugarchfit(spec, data = ret, solver = "hybrid"),
+    silent = TRUE
+  )
+  
+  if (inherits(fit, "try-error")) {
+    cat("[경고] GARCH 적합 중 오류가 발생하여 경보 계산을 건너뜁니다.\n")
+    return(invisible(NULL))
+  }
+  
+  # 3) 내일(1-step ahead) 변동성 예측 ---------------------------
+  fore <- rugarch$ugarchforecast(fit, n.ahead = 1)
+  sigma_forecast <- as.numeric(rugarch$sigma(fore))[1]
+  sigma_hist     <- stats::sd(ret, na.rm = TRUE)
+  
+  ratio <- sigma_forecast / sigma_hist
+  
+  # 4) 경보 레벨 분류 ------------------------------------------
+  level <- if (ratio <= normal_thr) {
+    "NORMAL"
+  } else if (ratio <= alert_thr) {
+    "ALERT"
+  } else {
+    "CRITICAL"
+  }
+  
+  # 5) 해석용 메시지 생성 --------------------------------------
+  msg <- switch(
+    level,
+    "NORMAL" = paste0(
+      "🟢 상태: NORMAL\n",
+      "   - 예측 변동성이 평소 수준 대비 크게 높지 않습니다.\n",
+      "   - 기존 전략(적립, 리밸런싱, TQQQ 비중) 그대로 유지해도 무방한 상태입니다.\n"
+    ),
+    "ALERT" = paste0(
+      "🟡 상태: ALERT\n",
+      "   - 예측 변동성이 장기 평균보다 눈에 띄게 높은 구간입니다.\n",
+      "   - 행동 가이드:\n",
+      "     · TQQQ 비중 추가 확대는 신중히 검토\n",
+      "     · 새로운 레버리지·개별주 공격 매수는 자제\n",
+      "     · 예정된 적립식은 그대로 진행하되, 리밸런싱 시 방어자산(GLD/채권) 우선 고려\n"
+    ),
+    "CRITICAL" = paste0(
+      "🔴 상태: CRITICAL\n",
+      "   - 예측 변동성이 평소 대비 매우 높은 수준입니다.\n",
+      "   - 과거 위기(코로나, 금융위기 등)에서 관측된 수준에 가까울 수 있습니다.\n",
+      "   - 행동 가이드:\n",
+      "     · TQQQ·고변동 자산 비중 축소 또는 신규매수 일시 중단 검토\n",
+      "     · 현금·채권·금 비중을 단기적으로 늘리는 완충 전략 가능\n",
+      "     · 감정적 매매(공포/욕심)에 휘둘리지 않도록, 시스템 규칙을 우선\n"
+    )
+  )
+  
+  # 6) 결과 출력 -----------------------------------------------
+  cat("■ GARCH(1,1) 기반 변동성 요약\n")
+  cat("   - 역사적(장기) 일간 변동성(σ_hist): ",
+      sprintf("%.4f", sigma_hist), " (약 ", sprintf("%.2f", sigma_hist * 100), "%)\n", sep = "")
+  cat("   - 내일 예측 변동성(σ_forecast):     ",
+      sprintf("%.4f", sigma_forecast), " (약 ", sprintf("%.2f", sigma_forecast * 100), "%)\n", sep = "")
+  cat("   - 예측/역사적 변동성 비율:         ",
+      sprintf("%.2f", ratio), "배\n", sep = "")
+  cat("   - 경보 레벨:                        ", level, "\n\n", sep = "")
+  
+  cat(msg, "\n")
+  cat(strrep("=", 80), "\n\n")
+  
+  invisible(
+    list(
+      level          = level,
+      sigma_hist     = sigma_hist,
+      sigma_forecast = sigma_forecast,
+      ratio          = ratio
+    )
+  )
+}
 
 ###############################################################################
 # risk_module.R 끝
