@@ -1,5 +1,5 @@
 ###############################################
-# PMS(Portfolio Monitoring System) 메인 스크립트 (루프 버전)
+# PMS(Portfolio Monitoring System) 1.0 / 2025-12-25 메인 스크립트 (루프 버전)
 # - stock_eval.R / stock_eval_us.R 필요(국내, 미국 주식 데이터 수집 모듈)
 # - risk_module.R 필요(리스크관리 함수 모음)
 #   . risk_module.R의 몬테카, MDD, 인출, 팩터, PCA를 모두 호출
@@ -7,11 +7,11 @@
 #         input_stock.csv    : 한국주식
 #         input_stock_us.csv : 미국주식
 # 출력 파일
-#         output_stock_{YYYY-MM-DD}.xlsx    : 한국주식 평가액
-#         output_stock_us_{YYYY-MM-DD}.xlsx : 미국주식 평가액
-#         output_sum.csv                    : 평가액총액, 수익금
-#         reports/Daily_Risk_YYYYMMDD.pdf   : 1페이지 그래프 보고서
-#         reports/gemini_prompt.txt         : 제미나이 질의어(프롬프트)
+#         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
+#         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
+#         output_sum.csv                      : 평가액총액, 수익금
+#         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
+#         reports/gemini_prompt.txt           : 제미나이 질의어(프롬프트)
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
 # 주) 리스크 및 운용 성과 평가는 TWR 기준,계좌 증감 및 체감 성과 표시는 NAV 기준으로 해석(형식적으로는 NAV 기반, 개념적으로는 TWR(Time-Weighted Return)에 해당)
 ###############################################
@@ -19,7 +19,7 @@
 # 위험관리 핵심 3대 지표 : MDD · CVaR · Risk-Off 3개
 
 # =========================================================
-# 0) 패키지 설치/로드
+# 패키지 설치/로드
 # =========================================================
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
@@ -40,7 +40,7 @@ library(rugarch); library(htmltools)
 
 
 # =========================================================
-# 1) 개인별 세팅 변수 : 최초에 세팅하면 됨
+# 개인별 세팅 변수 : 최초에 세팅하면 됨
 # =========================================================
 wd        <- "c:\\PMS_Core"     # 작업디렉토리
 fund_name <- "JS Fund"     # 펀드/계좌 이름(멋진 이름으로 지어보자)
@@ -75,7 +75,7 @@ suppressWarnings(
 )
 
 # =========================================================
-# 2) 실행 제어 변수
+# 실행 제어 변수
 # =========================================================
 count <- 1
 last_mc_date <- as.Date(NA)
@@ -331,7 +331,7 @@ DD_now = ", sprintf("%.6f", dd_now), "
 }
 
 
-# ---- 2) 변경 시에만 저장 ----
+# 변경 시에만 저장 ----
 save_if_changed <- function(text, file_path) {
   old <- if (file.exists(file_path)) paste(readLines(file_path, warn = FALSE), collapse = "\n") else ""
   if (!identical(old, text)) {
@@ -341,7 +341,7 @@ save_if_changed <- function(text, file_path) {
   FALSE
 }
 
-# ---- 3) 배지 계산 함수 ----
+# 배지 계산 함수(신호등) ----
 make_badge_text <- function(sum_xts, GLD_MODE) {
   dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
   
@@ -354,7 +354,7 @@ make_badge_text <- function(sum_xts, GLD_MODE) {
   }
 }
 
-# ---- 4) 주기적 저장 설정 ----
+# 주기적 저장 설정 ----
 PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
 UPDATE_EVERY_SEC <- 10  # ★ 10초마다(원하면 30, 60으로 바꾸세요)
 
@@ -362,7 +362,7 @@ last_update_time <- Sys.time() - 9999  # 첫 루프에서 바로 저장되게
 
 
 # =========================================================
-# 3) 반복 루프 시작
+# 반복 루프 시작(중단을 원하면 Interrupt-R 빨간버튼 클릭)
 # =========================================================
 repeat {
   
@@ -374,11 +374,11 @@ repeat {
   cat("[", count, "회차] ", format(Sys.time(), "%Y년 %m월 %d일 %H시 %M분 %S초"),
       " : 실행 시작***********************************************\n", sep="")
   
-  # [PATCH] 한 바퀴 에러가 전체 루프를 죽이지 않도록 방탄
+  # 한 바퀴 에러가 전체 루프를 죽이지 않도록 
   tryCatch({
     
     # =========================================================
-    # A) 현재 보유자산 평가 업데이트
+    # 현재 보유자산 평가 업데이트
     # =========================================================
     # stock_eval.R, stock_eval_us.R에서 아래 객체들이 생성된다고 가정:
     # - data_ko, data_en, exchange_rate, exchange_diff
@@ -422,7 +422,7 @@ repeat {
       result <- data.frame(Date = today, Sum = sum_value, Profit = profit_value)
       
       # =========================================================
-      # B) output_sum.csv 갱신 (날짜별 평가액합산, 누적수익 데이터)
+      # output_sum.csv 갱신 (날짜별 평가액합산, 누적수익 데이터)
       # =========================================================
       if (file.exists(output_file)) {
         existing_data <- read_csv(output_file,
@@ -443,11 +443,11 @@ repeat {
       
       write_csv(updated_data, output_file)
       
-      # [PATCH] 100일 이하면 "리스크 분석만" 생략 (루프 종료(break) 금지)
+      # 100일 이하면 "리스크 분석만" 생략
       is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
       
       # =========================================================
-      # C) 분석용 데이터 재읽기 + Return 계산
+      # 분석용 데이터 재읽기 + Return 계산
       # =========================================================
       dd <- readr::read_csv(
         output_file,
@@ -470,7 +470,7 @@ repeat {
       dd_ret <- dd %>% dplyr::filter(!is.na(Return_TWR))
       
       # =========================================================
-      #  초기 구간(100일 이하) 리스크 분석 게이트 (핵심)
+      #  초기 구간(100일 이하) 리스크 분석 게이트
       # =========================================================
       # "결측치를 제외하고 실제 데이터가 존재하는 날짜(Date)가 총 며칠인지" 그 고유한 개수를 파악
       dd_daily_n <- dd %>% distinct(Date) %>% filter(!is.na(Date)) %>% nrow()
@@ -479,7 +479,7 @@ repeat {
       risk_ready <- dd_daily_n >= min_days_for_risk
       
       # =========================================================
-      # D) PerformanceAnalytics 준비 (sum_xts, ret_xts)
+      # PerformanceAnalytics 준비 (sum_xts, ret_xts)
       # =========================================================
       # 시간가중수익률(TWR)이나 성과 분석 패키지(예: PerformanceAnalytics)를 활용하기 위한 필수적인 전처리 단계
       dd_daily <- dd %>%
@@ -514,16 +514,16 @@ repeat {
       }
       
       # =========================================================
-      # E) (옵션) 초기 모드에서도 최소 출력(오늘 평가/수익)
+      # (옵션) 초기 모드에서도 최소 출력(오늘 평가/수익)
       # =========================================================
       cat(sprintf("오늘 평가액: %s원 | 총수익: %s원\n",
                   comma(round(sum_value,0)), comma(round(profit_value,0))))
       
       # =========================================================
-      # F) 리스크/고급 분석 블록 (risk_ready일 때만)
+      # 리스크/고급 분석 블록 (risk_ready일 때만)
       # =========================================================
       # -----------------------------
-      # 1) 성과 요약 출력
+      # 성과 요약 출력
       # -----------------------------
       if (NROW(ret_xts) >= 5) {
         cat("\n=========== PerformanceAnalytics 성과 요약 ===========\n")
@@ -543,7 +543,7 @@ repeat {
         cat("[경고] 일간 수익률 표본이 너무 적어 PerformanceAnalytics 요약 생략\n")
       }
       
-      # [PATCH] 초기모드라면, 여기서부터(몬테카/리포트/PDF 등)는 스킵하고 누적만 계속
+      # 데이터 없는 초기라면, 여기서부터(몬테카/리포트/PDF 등)는 스킵하고 누적만 계속
       if (!risk_ready) {
         cat("[초기모드] 그래프/리스크 리포트(PDF) 생성도 생략합니다.\n")
         cat("          (기록만 누적하세요. ", min_days_for_risk, "일 이후 자동으로 분석이 활성화됩니다.)\n", sep="")
@@ -556,7 +556,7 @@ repeat {
         today_date <- max(dd$Date, na.rm = TRUE)
         
         # -----------------------------
-        # 2) 1일 1회만 몬테카/팩터/PCA 돌리기
+        # 1일 1회만 몬테카/팩터/PCA 돌리기
         # -----------------------------
         if (is.na(last_mc_date) || last_mc_date < today_date) {
           
@@ -580,7 +580,7 @@ repeat {
           ))
           
           # -----------------------------
-          # 3) 팩터 회귀 (factors_monthly.csv 있을 때만)
+          # 팩터 회귀 (factors_monthly.csv 있을 때만)
           # -----------------------------
           #  "그 수익이 어디서(어떤 위험을 감내해서) 왔는가"를 규명하는 작업을 수행
           if (file.exists("factors_monthly.csv") && file.exists("asset_returns_monthly.csv")) {
@@ -634,16 +634,14 @@ repeat {
         
         
         # =========================================================
-        # G) 아래부터는 그래프/트리맵/상세표 등
+        # 아래부터는 그래프/트리맵/상세표 등
         # =========================================================
         
-        # [PATCH] drop_na()는 필요 이상으로 데이터 날릴 수 있으니 최소 컬럼만 기준
+        # drop_na()는 필요 이상으로 데이터 날릴 수 있으니 최소 컬럼만 기준
         dd_plot_base <- dd %>% filter(!is.na(Date), !is.na(Sum))
         
         sum_left  <- dd_plot_base$Sum / 10000000
         
-        # [PATCH] 오른쪽 축에 쓰는 Return은 NAV 기반이 보통 더 자연스럽습니다.
-        # (원하시면 Return_TWR로 바꾸셔도 되며, 아래 한 줄만 바꾸면 됩니다.)
         ret_right <- dd_plot_base$Return_NAV * 100
         
         sum_range     <- range(sum_left,  na.rm = TRUE)
@@ -857,14 +855,20 @@ repeat {
         today_tsum <- tail(dd$Sum, 1)
         
         # 보유한 주식의 이름으로 종목군(버킷)을 판단
+        # 나중에 새로운 이름으로 나오는 종목이 있으면 아래 로직을 변경
         asset_SCHD <- rt %>% filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
           summarise(합계 = sum(한화평가금)) %>% pull(합계)
+        
+        # QQQ로 검색되었지만 TQQQ는 제외
         asset_QQQ  <- rt %>% filter(str_detect(종목명, "나스닥100|QQQ"), !str_detect(종목명, "TQQQ")) %>%
           summarise(합계 = sum(한화평가금)) %>% pull(합계)
+        
         asset_TQQQ <- rt %>% filter(str_detect(종목명, "TQQQ")) %>%
           summarise(합계 = sum(한화평가금)) %>% pull(합계)
+        
         asset_GLD  <- rt %>% filter(str_detect(종목명, "금현물")) %>%
           summarise(합계 = sum(한화평가금)) %>% pull(합계)
+        
         asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
           summarise(합계 = sum(한화평가금)) %>% pull(합계)
         
@@ -939,7 +943,7 @@ repeat {
           # 1.8 이상	위기 국면
           
           
-          # [PATCH] cvar_obj는 try 안/밖 스코프 + 실패 대비
+          # cvar_obj는 try 안/밖 스코프 + 실패 대비
           cvar_obj <- NULL
           suppressWarnings(try({
             # CVaR (Conditional VaR): 하위 5%의 최악의 상황이 발생했을 때 예상되는 손실의 평균값을 계산합니다. 이는 일반적인 변동성 지표보다 훨씬 더 보수적이고 강력한 위험 지표로, '꼬리 위험(Tail Risk)'을 방어하는 데 사용
@@ -953,7 +957,7 @@ repeat {
           cvar_amt <- if (!is.null(cvar_obj) && !is.null(cvar_obj$cvar_amt)) cvar_obj$cvar_amt else NA_real_
           
           suppressWarnings(try(
-            # 시간이 지나 주가가 변하면 내 초기 비중(weights)과 현재 비중(current_weights)이 달라집니다. 이를 '표류(Drift)'라고 함
+            # 시간이 지나 주가가 변하면 내 초기 비중(weights)과 현재 비중(current_weights)이 달라지는데 이를 'Drift'라고 함
             run_drift_rebal_signal(
               target_weights  = weights,
               current_weights = current_weights,
@@ -963,7 +967,7 @@ repeat {
           ))
           
           # ---------- 종목 테이블 ----------
-          # 1. 전일 대비 증감액 및 수익률 계산 로직 (에러 방지를 위해 인덱싱 명확화)
+          # 전일 대비 증감액 및 수익률 계산 로직 (에러 방지를 위해 인덱싱 명확화)
           # dd$Sum의 마지막 값이 오늘, 그 전의 값이 어제
           today_sum <- tail(dd$Sum, 1)
           yesterday_sum <- tail(dd$Sum, 2)[1]
@@ -971,12 +975,11 @@ repeat {
           diff_value <- today_sum - yesterday_sum
           diff_pct   <- (diff_value / yesterday_sum) * 100
           
-          # 2. 증감액에 따른 색상 및 기호 결정 (글로벌 표준 : 수익 파랑 / 손실 빨강)
+          # 증감액에 따른 색상 및 기호 결정(글로벌 표준을 따랐음 : 수익 파랑 / 손실 빨강)
           diff_color <- if(diff_value > 0) "blue" else if(diff_value < 0) "red" else "black"
           diff_sign  <- if(diff_value > 0) "+" else ""
           
-          # 3. [에러 해결 핵심] 타이틀을 하나의 HTML 문자열로 통합 생성
-          # <div> 태그와 Flexbox를 사용하여 중앙 정렬 및 한 줄 배치를 구현합니다.
+          # [에러 해결 핵심] 타이틀을 하나의 HTML 문자열로 통합 생성
           caption_string <- paste0(
             "<div style='display: flex; justify-content: center; align-items: center; margin-bottom: 15px;'>",
             "<span style='font-size: 130%; font-weight: bold; color: black; margin-right: 15px;'>",
@@ -993,11 +996,11 @@ repeat {
             "</div>"
           )
           
-          # 4. 데이터 테이블 출력
+          # 데이터 테이블 출력
           print(
             datatable(
               rt,
-              # htmltools::HTML()을 사용하여 문자열을 안전하게 전달합니다.
+              # htmltools::HTML()을 사용하여 문자열을 안전하게 전달
               caption = htmltools::HTML(caption_string),
               options = list(
                 pageLength = 100,
@@ -1050,25 +1053,27 @@ repeat {
             ifelse((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) >= 0, "+", ""),
             round((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) * 100 / tail(dd$Sum, 1), 2),
             "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
-            "SPY등:SCHD:QQQ:TQQQ:금:채권(최종목표%) = ",
-            sprintf("%4.1f", as.numeric(weights["SPY_ETC"]) * 100), " : ",
-            sprintf("%4.1f", as.numeric(weights["SCHD"]) * 100),  " : ",
-            sprintf("%4.1f", as.numeric(weights["QQQ"]) * 100),  " : ",
-            sprintf("%4.1f", as.numeric(weights["TQQQ"]) * 100),  " : ",
-            sprintf("%4.1f", as.numeric(weights["GOLD"]) * 100),  " : ",
-            sprintf("%4.1f", as.numeric(weights["IEF"]) * 100), "\n",
-            "SPY등:SCHD:QQQ:TQQQ:금:채권(현재비율%) = ",
-            sprintf("%4.1f", asset_SPY_ETC_ratio), " : ",
-            sprintf("%4.1f", asset_SCHD_ratio), " : ",
-            sprintf("%4.1f", asset_QQQ_ratio), " : ",
-            sprintf("%4.1f", asset_TQQQ_ratio), " : ",
-            sprintf("%4.1f", asset_GLD_ratio), " : ",
-            sprintf("%4.1f", asset_IEF_ratio)
+            "종목별 목표 평가액 = ",
+            "SPY등 ", sprintf("%.1f", (today_tsum * as.numeric(weights["SPY_ETC"])) / 1e8), "억 | ",
+            "SCHD ", sprintf("%.1f", (today_tsum * as.numeric(weights["SCHD"])) / 1e8), "억 | ",
+            "QQQ ",  sprintf("%.1f", (today_tsum * as.numeric(weights["QQQ"]))     / 1e8), "억 | ",
+            "TQQQ ", sprintf("%.1f", (today_tsum * as.numeric(weights["TQQQ"]))    / 1e8), "억 | ",
+            "금 ",   sprintf("%.1f", (today_tsum * as.numeric(weights["GOLD"]))    / 1e8), "억 | ",
+            "채권 ", sprintf("%.1f", (today_tsum * as.numeric(weights["IEF"]))     / 1e8), "억\n",
+            
+            "종목별 현재 평가액 = ",
+            "SPY등 ", sprintf("%.1f", asset_SPY_ETC / 1e8), "억 | ",
+            "SCHD ", sprintf("%.1f", asset_SCHD    / 1e8), "억 | ",
+            "QQQ ",  sprintf("%.1f", asset_QQQ     / 1e8), "억 | ",
+            "TQQQ ", sprintf("%.1f", asset_TQQQ    / 1e8), "억 | ",
+            "금 ",   sprintf("%.1f", asset_GLD     / 1e8), "억 | ",
+            "채권 ", sprintf("%.1f", asset_IEF     / 1e8), "억"
           )
           
           # 두 그래프에 공통으로 적용할 X축 범위를 계산
           common_date_range <- range(dd_plot_base$Date, na.rm = TRUE)
           common_date_range[2] <- common_date_range[2] + 2  # 그래프 오른쪽에 여유가 생기도록 2일 여유를 둠
+          # 위의 이유로 실행종료시 2개씩 데이터가 어긋난다고 워닝이 뜨는데 무시 가능
           
           # ---------- 상단 플롯(p) ----------
           p <- ggplot(dd_plot_base, aes(x = Date)) +
@@ -1096,15 +1101,23 @@ repeat {
             ) +
             labs(
               title = plot_title,
-              x = paste0(exchange_rate, "원/달러", "(", exchange_diff, ")"),
-              color = "수익"
+              subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
+              x = NULL,
+              y = NULL
             ) +
             theme_minimal(base_size = 13) +
             theme(
-              axis.text.x = element_text(angle = 45, hjust = 1),
-              axis.title.y.right = element_text(color = "green"),
-              legend.position = "right",
-              plot.title = element_text(hjust = 0.5, face = "bold")
+              plot.title.position = "plot",
+              plot.title = element_text(
+                hjust = 0.5,      # 중앙 정렬
+                face = "bold",
+                size = 14
+              ),
+              plot.subtitle = element_text(
+                hjust = 0.5,
+                size = 11,
+                color = "gray30"
+              )
             ) +
             coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
             annotate("text",
@@ -1187,14 +1200,14 @@ repeat {
           rescale_b <- range_profit[1] - rescale_a * range_return[1]
           
           p_mid <- ggplot(dd_mid, aes(x = Date)) +
-            # [하단] 누적 수익금 막대 (배경 역할)
+            # 누적 수익금 막대 (배경 역할)
             geom_bar(aes(y = Profit_man, fill = Status),
                      stat = "identity", width = 1, alpha = 0.5, na.rm = TRUE) + # 선을 돋보이게 하기 위해 alpha 조정
             
-            # [중앙] 수익률 0% 기준선 (희미한 노란색/금색)
+            # 수익률 0% 기준선 (희미한 노란색/금색)
             geom_hline(yintercept = rescale_b, color = "gold", linewidth = 0.8, alpha = 0.6) +
             
-            # [상단] 단순 투자수익률 선 그래프
+            # 단순 투자수익률 선 그래프
             geom_line(aes(y = Return_pct * rescale_a + rescale_b),
                       color = "darkslategray4", linewidth = 1) +
             
@@ -1257,7 +1270,7 @@ repeat {
             labs(
               title = paste0("Drawdown (현재: ", sprintf("%.2f%%", cur_dd_pct),
                              ", 피크대비: ", scales::comma(cur_dd_amt), "원)"),
-              x = "날짜",
+              x = "날짜(연/월)",
               color = "Drawdown") +
             theme_minimal(base_size = 13) +
             theme(axis.title.y.right = element_text(color = "purple"),
@@ -1270,21 +1283,94 @@ repeat {
             expand = c(0, 0) # 불필요한 양끝 여백 제거
           )
           
-          # 그래프들을 결합하여 하나의 화면에 보여줌
-          # 상(p) / 중(p_mid) / 하(p_dd) 결합
-          # 결합 및 레이아웃 수정
-          # 상(p) / 중(p_mid) / 하(p_dd) 결합 및 범례 완전 제거
-          combined_plot <- (p / p_mid / p_dd) +
-            patchwork::plot_layout(
-              heights = c(2.2, 1, 1) # 높이 비율 유지
-            ) &
+          
+          # =========================================================
+          #  비중 막대 그래프 (위: 목표 / 아래: 현재) 
+          #   - 색상: 밝은 팔레트
+          #   - 라벨: 구간 내부 종목명
+          #   - 순서: SPY등 → SCHD → QQQ → TQQQ → 금 → 채권 (왼쪽부터)
+          # =========================================================
+          weight_bar_long$Type <- factor(weight_bar_long$Type, levels = c("Current", "Target"))
+          
+          # 자산 순서 고정 (SPY등이 왼쪽부터 보이게)
+          weight_bar_long$Asset <- factor(
+            weight_bar_long$Asset,
+            levels = c("SPY등", "SCHD", "QQQ", "TQQQ", "금", "채권")
+          )
+          
+          # 밝은 팔레트
+          asset_colors_light <- c(
+            "SPY등" = "#4FA3E3",
+            "SCHD" = "#5CCB8A",
+            "QQQ"  = "#B39DDB",
+            "TQQQ" = "#FF8A65",
+            "금"   = "#FFD54F",
+            "채권" = "#90A4AE"
+          )
+          
+          # 라벨
+          weight_bar_long$label <- ifelse(
+            weight_bar_long$Weight < 3,
+            "",
+            paste0(
+              as.character(weight_bar_long$Asset),
+              " (",
+              sprintf("%.1f", weight_bar_long$Weight),
+              "%)"
+            )
+          )
+          
+          
+          # 비중 누적막대 2줄(목표/현재)
+          p_weight_bar <- ggplot(weight_bar_long, aes(x = Type, y = Weight, fill = Asset)) +
+            geom_col(
+              width = 0.5,  # ✅ 두 줄 막대를 서로 붙게(폭 최대)
+              color = "white", linewidth = 0.7,
+              position = position_stack(reverse = TRUE)
+            ) +
+            geom_text(
+              aes(label = label),
+              position = position_stack(vjust = 0.5, reverse = TRUE),
+              color = "black",
+              size = 3.2,        # ← 기존 3.6 → 3.2
+              fontface = "bold"
+            ) +
+            coord_flip() +
+            scale_fill_manual(values = asset_colors_light, drop = FALSE) +
+            scale_y_continuous(
+              limits = c(0, 100),
+              labels = function(x) paste0(x, "%"),
+              expand = c(0, 0)   # ✅ 좌우 여백 제거
+            ) +
+            scale_x_discrete(
+              expand = c(0, 0)   # ✅ 위/아래 여백(범주 축) 제거
+            ) +
+            labs(
+              title = "자산배분 현황 (위: 목표비중 / 아래: 현재비중)",
+              x = NULL, y = "비중(%)"
+            ) +
+            theme_minimal(base_size = 12) +
             theme(
-              legend.position = "none",        # 모든 범례 제거
-              plot.margin = margin(10, 20, 10, 20), # 좌우 여백을 충분히 주어 깔끔하게 배치
-              axis.title.y.right = element_text(vjust = 1) # 보조축 제목 위치 미세 조정
+              legend.position = "none",
+              axis.text.y = element_text(face = "bold"),
+              axis.text.x = element_text(size = 10),
+              plot.title  = element_text(face = "bold", hjust = 0.5),
+              panel.grid.major.y = element_blank(),
+              panel.grid.minor = element_blank(),
+              plot.margin = margin(2, 10, 2, 10)  # ✅ 바깥 여백도 약간 축소
             )
           
-          # 최종 출력 : 여기서 3개 그래프를 합쳐서 출력해줌
+          
+          # =========================================================
+          # combined_plot 결합(위에서 만든 그래프 객체를 합침)
+          # =========================================================
+          combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
+            patchwork::plot_layout(heights =c(2.2, 1, 1, 0.40)) &
+            theme(
+              legend.position = "none",
+              plot.margin = margin(10, 20, 10, 20)
+            )
+          
           suppressMessages(print(combined_plot))
           
           # ---------- 콘솔 출력 ----------
@@ -1302,8 +1388,7 @@ repeat {
           pdf_file <- file.path(out_dir, sprintf("Daily_Risk_%s.pdf", date_str))
           if (file.exists(pdf_file)) file.remove(pdf_file)
           
-          # [PATCH] cairo_pdf + par(mfrow)는 patchwork(ggplot)엔 효과가 적음
-          # => ggsave로 1페이지 저장(가로 A4 사이즈 동일)
+          # ggsave로 1페이지 저장(가로 A4 사이즈 동일)
           ggsave(filename = pdf_file, plot = combined_plot, width = 11.69, height = 8.27, device = cairo_pdf)
           cat("Saved:", pdf_file, "\n")
           
@@ -1321,7 +1406,7 @@ repeat {
           cat("          (기록만 누적하세요. ", min_days_for_risk, "일 이후 자동으로 분석이 활성화됩니다.)\n", sep="")
         }
         
-        # 마지막 2행 출력(전일/오늘 비교를 위함)
+        # 데이터 마지막 2행 출력(전일/오늘 비교를 위함)
         print(tail(dd %>% select(Date, Sum, Profit, Return_TWR, Return_NAV), 2))
         # 현금 유입이나 매매가 없어도
         # Return_TWR과 Return_NAV는 일치하지 않을 수 있음
