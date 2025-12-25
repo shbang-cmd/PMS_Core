@@ -1124,6 +1124,11 @@ repeat {
                 hjust = 0.5,
                 size = 11,
                 color = "gray30"
+              ),
+              axis.title.y.right = element_text(
+                color = "green",  # 연두색 (그래프 선과 매칭)
+                size  = 9,
+                face  = "bold"
               )
             ) +
             coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
@@ -1219,7 +1224,7 @@ repeat {
             
             # 단순 투자수익률 선 그래프
             geom_line(aes(y = Return_pct * rescale_a + rescale_b),
-                      color = "darkslategray4", linewidth = 1) +
+                      color = "#F4A261", linewidth = 1) +  # 살구색
             
             # 색상 설정
             scale_fill_manual(values = c("Plus" = "dodgerblue4", "Minus" = "firebrick3")) +
@@ -1247,7 +1252,11 @@ repeat {
               legend.position = "none",
               axis.title.x = element_blank(),
               axis.text.x = element_blank(),
-              axis.title.y.right = element_text(color = "darkslategray4", size = 10),
+              axis.title.y.right = element_text(
+                color = "#F4A261",   # ← 투자수익률 선과 동일한 살구색
+                size  = 10,
+                face  = "bold"
+              ),
               panel.grid.minor = element_blank(),
               plot.title = element_text(size = 11, face = "bold", hjust = 0.5)
             )
@@ -1283,7 +1292,8 @@ repeat {
               x = "날짜(연/월)",
               color = "Drawdown") +
             theme_minimal(base_size = 13) +
-            theme(axis.title.y.right = element_text(color = "purple"),
+            theme(axis.title.y.right = element_text(color = "purple",
+                                                    size = 9),
                   legend.position = "right")
           
           p_dd <- p_dd + scale_x_date(
