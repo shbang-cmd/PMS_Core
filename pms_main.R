@@ -10,6 +10,7 @@
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
 #         output_sum.csv                      : 평가액총액, 수익금
+#                                               (최소 100일이상 데이터 필요)
 #         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
 #         reports/gemini_prompt.txt           : 제미나이 질의어(프롬프트)
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
@@ -345,6 +346,8 @@ save_if_changed <- function(text, file_path) {
 
 # 배지 계산 함수(신호등) ----
 make_badge_text <- function(sum_xts, GLD_MODE) {
+  # MDD 15%이하이고 변동성이 25%이상인 날이 연속적으로 63일 이상이면 GLD_MODE가 TRUE가 되고, 이 경우포트폴리오 신규 매수는 중단하고 GOLD만 매수함
+  # 평생 몇 번 되지않을 낮은 확률로 예상하며 시장이 무너지는 경우에 해당할 것으로 예상
   dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
   
   if (isTRUE(GLD_MODE)) {
@@ -686,6 +689,7 @@ repeat {
           today_vol63 <- as.numeric(last(vol63_xts))
           
           cond_xts <- (vol63_xts >= 0.25) & (dd_series <= -0.15)
+          # Drawdown 15%이하이고 63일 변동성이 25%이상
           cond_vec <- as.logical(coredata(cond_xts))
           valid_idx <- which(!is.na(cond_vec))
           
@@ -700,6 +704,7 @@ repeat {
             }
           }
           GLD_MODE <- (consecutive_days >= 63)
+          # MDD 15%이하이고 변동성이 25%이상인 날이 연속적으로 63일 이상이면 GLD_MODE가 TRUE
         }
         
         
@@ -1126,7 +1131,10 @@ repeat {
                      x = min(dd_plot_base$Date, na.rm = TRUE),
                      y = max(sum_left, na.rm = TRUE),
                      label = label_text,
-                     hjust = 0, vjust = 1, size = 5, color = "black") +
+                     hjust = 0, 
+                     vjust = 1, 
+                     size  = 3.5,   # 오늘평가액 등 글자 사이즈즈 
+                     color = "black") +
             annotate("label",
                      x     = max(dd_plot_base$Date, na.rm = TRUE),
                      y     = min(sum_left, na.rm = TRUE) * 1.02,
@@ -1287,20 +1295,48 @@ repeat {
           
           
           # =========================================================
-          #  비중 막대 그래프 (위: 목표 / 아래: 현재) 
-          #   - 색상: 밝은 팔레트
-          #   - 라벨: 구간 내부 종목명
-          #   - 순서: SPY등 → SCHD → QQQ → TQQQ → 금 → 채권 (왼쪽부터)
+          #  비중 막대 그래프 (위: 목표 / 아래: 현재)
           # =========================================================
-          weight_bar_long$Type <- factor(weight_bar_long$Type, levels = c("Current", "Target"))
           
-          # 자산 순서 고정 (SPY등이 왼쪽부터 보이게)
+          today_tsum <- as.numeric(tail(dd$Sum, 1))
+          
+          weight_bar_df <- data.frame(
+            Asset = factor(
+              c("SPY등", "SCHD", "QQQ", "TQQQ", "금", "채권"),
+              levels = c("SPY등", "SCHD", "QQQ", "TQQQ", "금", "채권")
+            ),
+            Target = c(
+              as.numeric(weights["SPY_ETC"]),
+              as.numeric(weights["SCHD"]),
+              as.numeric(weights["QQQ"]),
+              as.numeric(weights["TQQQ"]),
+              as.numeric(weights["GOLD"]),
+              as.numeric(weights["IEF"])
+            ) * 100,
+            Current = c(
+              as.numeric(asset_SPY_ETC_ratio),
+              as.numeric(asset_SCHD_ratio),
+              as.numeric(asset_QQQ_ratio),
+              as.numeric(asset_TQQQ_ratio),
+              as.numeric(asset_GLD_ratio),
+              as.numeric(asset_IEF_ratio)
+            )
+          )
+          
+          weight_bar_long <- tidyr::pivot_longer(
+            weight_bar_df,
+            cols = c(Target, Current),
+            names_to = "Type",
+            values_to = "Weight"
+          )
+          
+          weight_bar_long$Type <- factor(weight_bar_long$Type, levels = c("Target", "Current"))
+          
           weight_bar_long$Asset <- factor(
             weight_bar_long$Asset,
             levels = c("SPY등", "SCHD", "QQQ", "TQQQ", "금", "채권")
           )
           
-          # 밝은 팔레트
           asset_colors_light <- c(
             "SPY등" = "#4FA3E3",
             "SCHD" = "#5CCB8A",
@@ -1310,31 +1346,24 @@ repeat {
             "채권" = "#90A4AE"
           )
           
-          # 라벨
-          weight_bar_long$label <- ifelse(
-            weight_bar_long$Weight < 3,
-            "",
-            paste0(
-              as.character(weight_bar_long$Asset),
-              " (",
-              sprintf("%.1f", weight_bar_long$Weight),
-              "%)"
-            )
+          weight_bar_long$label <- paste0(
+            as.character(weight_bar_long$Asset),
+            " (", sprintf("%.1f", weight_bar_long$Weight), "%)"
           )
+          weight_bar_long$label[weight_bar_long$Weight < 3] <- ""
           
-          
-          # 비중 누적막대 2줄(목표/현재)
           p_weight_bar <- ggplot(weight_bar_long, aes(x = Type, y = Weight, fill = Asset)) +
             geom_col(
-              width = 0.5,  # ✅ 두 줄 막대를 서로 붙게(폭 최대)
-              color = "white", linewidth = 0.7,
+              width = 1.0,      # 두 줄 막대 사이 공백 최소화(두껍게 채움)
+              color = "white",
+              linewidth = 0.6,
               position = position_stack(reverse = TRUE)
             ) +
             geom_text(
               aes(label = label),
               position = position_stack(vjust = 0.5, reverse = TRUE),
               color = "black",
-              size = 3.2,        # ← 기존 3.6 → 3.2
+              size = 3.0,       
               fontface = "bold"
             ) +
             coord_flip() +
@@ -1342,24 +1371,23 @@ repeat {
             scale_y_continuous(
               limits = c(0, 100),
               labels = function(x) paste0(x, "%"),
-              expand = c(0, 0)   # ✅ 좌우 여백 제거
+              expand = c(0, 0)
             ) +
-            scale_x_discrete(
-              expand = c(0, 0)   # ✅ 위/아래 여백(범주 축) 제거
-            ) +
+            scale_x_discrete(expand = c(0, 0), limits = rev(levels(weight_bar_long$Type))) +  # Target/Current 사이 여백 제거(범주축)
             labs(
               title = "자산배분 현황 (위: 목표비중 / 아래: 현재비중)",
-              x = NULL, y = "비중(%)"
+              x = NULL, y = NULL
             ) +
             theme_minimal(base_size = 12) +
             theme(
               legend.position = "none",
-              axis.text.y = element_text(face = "bold"),
-              axis.text.x = element_text(size = 10),
-              plot.title  = element_text(face = "bold", hjust = 0.5),
-              panel.grid.major.y = element_blank(),
+              axis.text.y = element_text(face = "bold", size = 11),
+              axis.text.x = element_blank(),
+              axis.ticks.x = element_blank(),
+              plot.title  = element_text(face = "bold", hjust = 0.5, size = 11),
+              panel.grid.major = element_blank(),
               panel.grid.minor = element_blank(),
-              plot.margin = margin(2, 10, 2, 10)  # ✅ 바깥 여백도 약간 축소
+              plot.margin = margin(2, 10, 2, 10)
             )
           
           
@@ -1391,6 +1419,7 @@ repeat {
           if (file.exists(pdf_file)) file.remove(pdf_file)
           
           # ggsave로 1페이지 저장(가로 A4 사이즈 동일)
+          # pdf를 다른 프로그램이 열고 있을 때 아래와 같이 생성하면 에러가 날 수 있으므로 유의 
           ggsave(filename = pdf_file, plot = combined_plot, width = 11.69, height = 8.27, device = cairo_pdf)
           cat("Saved:", pdf_file, "\n")
           
