@@ -1,11 +1,15 @@
 ###############################################
 # PMS(Portfolio Monitoring System) 1.0 / 2025-12-25 메인 스크립트 (루프 버전)
+#
+# 1줄 사용법 : 그냥 Ctrl + Alt + R 키를 누른다(전체 실행)
+#
 # - stock_eval.R / stock_eval_us.R 필요(국내, 미국 주식 데이터 수집 모듈)
 # - risk_module.R 필요(리스크관리 함수 모음)
 #   . risk_module.R의 몬테카, MDD, 인출, 팩터, PCA를 모두 호출
 # 입력 파일
 #         input_stock.csv    : 한국주식
 #         input_stock_us.csv : 미국주식
+#         output_sum.csv                      : 전일 평가액총액, 수익금(입력이자 출력파일)
 # 출력 파일
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
@@ -87,8 +91,8 @@ week_kor <- c("일", "월", "화", "수", "목", "금", "토")
 min_days_for_risk <- 100
 
 # 폰트
-font_add(family = "malgun", regular = "C:/Windows/Fonts/malgun.ttf")
-showtext_auto()
+font_add(family = "malgun", regular = "C:\\Windows\\Fonts\\malgun.ttf")
+showtext_auto()  # R 그래픽이 텍스트를 그릴 때, 시스템 폰트 대신 showtext 엔진으로 강제로 렌더링
 
 # 특정의미를 갖는 열을 추가하는 함수
 add_twr_return_to_dd <- function(dd, ret_clip = 0.5, flow_deadband = 1000) {
@@ -780,20 +784,16 @@ repeat {
           dplyr::select(-평가금) %>%
           arrange(desc(한화평가금))
         
-        treemap(
-          dt_fn,
-          index = "종목명",
-          vSize = "한화평가금",
-          title = "구성비율 트리맵",
-          palette = "Set3",
-          fontsize.labels = 18,
-          fontcolor.labels = "black",
-          fontface.labels = 2,
-          bg.labels = 0,
-          overlap.labels = 0.5,
-          inflate.labels = TRUE,
-          align.labels = list(c("center","center"))
+        # 종목별 구성 비율을 쉽게 트리맵으로 보여줌 ----
+        showtext_auto(FALSE)
+        
+        dt_fn$종목명_tm <- ifelse(
+          nchar(dt_fn$종목명) > 10,
+          paste0(substr(dt_fn$종목명, 1, 10), "\n", substr(dt_fn$종목명, 11, 999)),
+          dt_fn$종목명
         )
+        treemap(dt_fn, index="종목명_tm", vSize="한화평가금", title="구성비율 트리맵")
+        showtext_auto()
         
         # ---------- 1일 평균 증가액 ----------
         fit <- lm(sum_left ~ as.numeric(dd_plot_base$Date), data = dd_plot_base)
@@ -1004,6 +1004,7 @@ repeat {
           )
           
           # 데이터 테이블 출력
+          
           print(
             datatable(
               rt,
@@ -1048,7 +1049,7 @@ repeat {
             "리스크상태(63D) Vol:", ifelse(is.na(today_vol63), "-", sprintf("%.2f%%", today_vol63*100)),
             "  DD:", ifelse(is.na(today_dd), "-", sprintf("%.2f%%", today_dd*100)),
             "  지속:", consecutive_days, "D",
-            "  신규적립:", ifelse(GLD_MODE, "GLD(리스크-오프)", "정상(목표비중)"), "\n",
+            "  신규적립:", ifelse(GLD_MODE, "GLD(리스크-오프)", "정상(목표비중유지)"), "\n",
             "PA(연환산)  Return:", fmt_pct(pa_annret),
             "  Vol:", fmt_pct(pa_annvol),
             "  MDD:", fmt_pct(pa_mdd),

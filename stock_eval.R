@@ -13,12 +13,15 @@ today <- format(Sys.Date(), "%Y-%m-%d")
 # # 깃허브에 저장된 주식 정보를 가져오는 경우(public repository)
 # 파일 형식 : raw.githubusercontent.com/{사용자아이디}/{프로젝트명}/main/{파일명}
 # url <- "https://raw.githubusercontent.com/shbang-cmd/stock_eval/main/input_stock.csv"
-# data <- read_csv(url, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
+# data <- read_csv(url, comment = "#", locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
 
 # 로컬하드에 저장된 input_stock.csv 를 가져오는 경우
 full_path <- normalizePath(file.path(getwd(), "input_stock.csv"), winslash = "/", mustWork = FALSE)
 
-data <- read_csv(full_path, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
+data <- read_csv(full_path, 
+                 comment = "#",   # 맨앞이 #으로 시작하면 무시함
+                 locale = locale(encoding = "UTF-8"), 
+                 show_col_types = FALSE)
 
 output_file <- paste0("output_stock_", today, ".xlsx")
 if (file.exists(output_file)) file.remove(output_file)
@@ -135,6 +138,9 @@ new_data <- data %>%
 p <- ggplot(data = new_data, aes(x = reorder(보유증권사, -sec_tot), y = sec_tot/1000000)) +
   labs(x = "증권사", y = "보유액합계(백만원)") +
   geom_text(aes(label=round(sec_tot/1000000, 1)), vjust = -0.1) +
-  geom_col()
+  geom_col() +
+  labs(
+    title = "한국주식 증권사별 보유액 합계(단위:백만원)"
+  )
 
 print(p)

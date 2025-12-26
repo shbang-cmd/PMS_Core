@@ -19,12 +19,15 @@ today <- format(Sys.Date(), "%Y-%m-%d")
 # # 깃허브에 저장된 주식 정보를 가져오는 경우(public repository)
 # 파일 형식 : raw.githubusercontent.com/{사용자아이디}/{프로젝트명}/main/{파일명}
 # url <- "https://raw.githubusercontent.com/shbang-cmd/stock_eval/main/input_stock_us.csv"
-# data_en <- read_csv(url, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
+# data_en <- read_csv(url, comment = "#", locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
 
 # 로컬하드에 저장된 input_stock.csv 를 가져오는 경우
 full_path <- normalizePath(file.path(getwd(), "input_stock_us.csv"), winslash = "/", mustWork = FALSE)
 
-data_en <- read_csv(full_path, locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
+data_en <- read_csv(full_path, 
+                    comment = "#",  # 맨앞이 #으로 시작하면 무시함
+                    locale = locale(encoding = "UTF-8"), 
+                    show_col_types = FALSE)
 
 
 output_file <- paste(paste("output_stock_us_", today, sep = ""), ".xlsx", sep = "") # 출력파일명 뒤에 날짜삽입
@@ -175,7 +178,10 @@ p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = �
   geom_col() +
   scale_fill_gradient2(low = "red", 
                        high = "blue", 
-                       midpoint = 0)
+                       midpoint = 0) +
+  labs(
+    title = "미국 주식 종목별 평가금(단위:백만$, 그래프위 숫자는 비중)"
+  )
 
 print(p_us)
 
