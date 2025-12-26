@@ -129,13 +129,6 @@ add_twr_return_to_dd <- function(dd, ret_clip = 0.5, flow_deadband = 1000) {
 }
 
 
-# 프롬프트 엔지니어링을 이용하여 자연어로 운용성과를 보고 받음
-# ============================================================
-# PMS -> Gemini prompt 주기적 저장 
-# ============================================================
-dir.create("reports", showWarnings = FALSE)
-
-# ---- 1) 프롬프트 생성 함수 (리스크 지표 포함 버전) ----
 make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
                                    fund_name = "JS Fund",
                                    report_time_kst = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
@@ -143,17 +136,28 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
                                    risk_metrics = NULL,
                                    warnings_vec = character(0),
                                    errors_vec   = character(0),
-                                   take_last_n_days = 2) {
+                                   take_last_n_days = 2,
+                                   # ---- (추가) 벤치마크(SPY) 정보: 있으면 비교표시, 없으면 자동 유보 ----
+                                   benchmark_name = "SPY",
+                                   benchmark_ret  = NULL  # 예: -0.0032 (금일 SPY 수익률, 소수)
+) {
   
+  # --- 안전장치: dd가 NULL/비어있으면 방어 ---
+  if (is.null(dd) || NROW(dd) == 0) stop("dd가 비어 있습니다.")
+  if (is.null(sum_xts) || NROW(sum_xts) == 0) stop("sum_xts가 비어 있습니다.")
+  
+  # --- DD_now 계산 (sum_xts 기준) ---
   dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
-  dd_tail <- tail(dd, take_last_n_days)
+  
+  # --- 최근 N일 성과표 텍스트 ---
+  dd_tail <- utils::tail(dd, take_last_n_days)
   tab_txt <- utils::capture.output(print(dd_tail))
   
   badge_txt <- if (!is.null(badge_text) && nzchar(badge_text)) badge_text else "(미제공)"
   warn_txt  <- if (length(warnings_vec) > 0) paste0("- ", warnings_vec, collapse = "\n") else "(없음)"
   err_txt   <- if (length(errors_vec)  > 0) paste0("- ", errors_vec,  collapse = "\n") else "(없음)"
   
-  # 리스크 지표 텍스트
+  # --- 리스크 지표 텍스트 ---
   risk_txt <- "(미제공)"
   if (!is.null(risk_metrics)) {
     if (is.data.frame(risk_metrics)) {
@@ -171,170 +175,106 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
     }
   }
   
-  # 실제 운용을 해보니 아래의 자연어로 된 Prompt Engineering도 무척 중요
-  # 제미나이가 사용자가 듣기 좋은 말만 하거나 환각에 빠지지 않도록 규칙을 잘 정해야 함
-  # 사용법 : reports/gemini_prompt.txt 를 오픈하고 전체 텍스트를 복사해서 제미나이에게 물어 본다.
-  # chatgpt, gemini의 API 를 이용하는 방법도 있으나 너무 복잡하고 유료서비스라 간단하게 Prompt만 생성함
+  # ------------------------------------------------------------------
+  # (추가) 핵심 KPI: 금일 잔액/전일 대비/금일 NAV·TWR/벤치마크 대비
+  # ------------------------------------------------------------------
+  # dd는 tibble/data.frame 모두 가능. 마지막 행에서 필요한 값 추출
+  last_row <- dd[NROW(dd), , drop = FALSE]
+  
+  nav_today <- if ("Sum" %in% names(last_row)) as.numeric(last_row$Sum) else NA_real_
+  nav_prev  <- if ("Sum_lag" %in% names(last_row)) as.numeric(last_row$Sum_lag) else NA_real_
+  nav_diff  <- nav_today - nav_prev
+  
+  nav_diff_pct <- if (is.finite(nav_prev) && nav_prev != 0) nav_diff / nav_prev else NA_real_
+  
+  ret_nav <- if ("Return_NAV" %in% names(last_row)) as.numeric(last_row$Return_NAV) else NA_real_
+  ret_twr <- if ("Return_TWR" %in% names(last_row)) as.numeric(last_row$Return_TWR) else NA_real_
+  
+  # 포맷 함수(패키지 없을 때도 동작하도록)
+  fmt_comma <- function(x) {
+    if (!is.finite(x)) return("(미제공)")
+    if (requireNamespace("scales", quietly = TRUE)) return(scales::comma(x))
+    format(x, big.mark = ",", scientific = FALSE)
+  }
+  fmt_pct <- function(x, acc = 0.01) {
+    if (!is.finite(x)) return("(미제공)")
+    if (requireNamespace("scales", quietly = TRUE)) return(scales::percent(x, accuracy = acc))
+    paste0(round(x * 100, 2), "%")
+  }
+  
+  bm_line <- if (!is.null(benchmark_ret) && is.finite(benchmark_ret)) {
+    paste0("- 벤치마크(", benchmark_name, ") 금일 수익률: ", fmt_pct(benchmark_ret, acc = 0.01))
+  } else {
+    paste0("- 벤치마크(", benchmark_name, ") 금일 수익률: (미제공 → 평가 유보)")
+  }
+  
+  rel_line <- if (!is.null(benchmark_ret) && is.finite(benchmark_ret) && is.finite(ret_twr)) {
+    paste0("- ", benchmark_name, " 대비 상대성과(금일, TWR 기준): ", fmt_pct(ret_twr - benchmark_ret, acc = 0.01))
+  } else {
+    paste0("- ", benchmark_name, " 대비 상대성과: (평가 유보)")
+  }
+  
+  kpi_txt <- paste0(
+    "- 금일 평가금(Sum): ", fmt_comma(nav_today), "원\n",
+    "- 전일 대비: ", fmt_comma(nav_diff), "원 (", fmt_pct(nav_diff_pct, acc = 0.01), ")\n",
+    "- 금일 Return_NAV: ", fmt_pct(ret_nav, acc = 0.01), "\n",
+    "- 금일 Return_TWR: ", fmt_pct(ret_twr, acc = 0.01), "\n",
+    bm_line, "\n",
+    rel_line
+  )
+  
+  # ------------------------------------------------------------------
+  # 프롬프트 본문 생성
+  # ------------------------------------------------------------------
   paste0(
-    
-"[Fund Name] : ", fund_name, "\n",
-"[Report Time] : ", report_time_kst, "\n",
-"
-(KST) 당신은 **“기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저”**입니다.
-
-아래 Portfolio Management System(PMS) 출력 데이터만을 근거로,
-
-‘오늘의 투자운용 현황’에 대한 일일 운용 코멘트를 전문적으로 작성하세요.
-
-[필수 규칙]
-
-맨위 제목에 [Fund Name]을 책임지고 있는 수석 펀드매니저입니다. 아래와 같이 현재 자금운용상황 보고드립니다. 라고 넣어줘.
-
-예측·단정 금지
-입력 데이터에 없는 지표(예: Ulcer Index 등)는 절대 언급하지 말 것.
-
-행동 지시 금지
-매수·매도·비중 조정·투자 권유 등 행동을 유도하거나 지시하는 표현 금지
-(해석·상태 설명만 허용).
-
-**Return_NAV(계좌 변화)**와 **Return_TWR(운용 성과)**의 차이를 반드시 설명할 것.
-
-많이 차이나면 원달러 환율의 급등과 급락 등의 요인이 주 원인일 수 있다고 밝히되 확정적으로 표현하지 말것.
-
-핵심 판단 축은 **운용 상태(신호등 배지)**와 Drawdown(DD) 및 리스크 지표임.
-
-환율과 미국채 수익률을 제외하고 숫자는 아래 입력 데이터에서만 인용, 단위(원/%) 정확히 표기할 것.
-
-입력 데이터에서 Flow가 명시되지 않는 경우 Flow 관련 결론은 유보.
-
-존댓말, 간결하고 기관 운용 리포트 톤 유지.
-
-**Flow(입출금/매매)**는 입력 데이터에 명시되지 않으면 언급하지 말 것.
-
-입력 데이터와 모순되는 원인(예: Flow=0인데 자금 유출 확정 서술)은
-절대 ‘확정’으로 표현하지 말 것.
-
-입력으로 확인되지 않은 원인은 반드시
-**“가능성” 또는 “확인 불가”**로만 표현할 것.
-
-성과 요약 시
-Return_NAV과 Return_TWR의 차이가 존재하면,
-아래 순서로 **‘원인 후보’**를 나열할 것:
-
-(1) Flow(현금흐름)
-(2) 배당/세금/수수료 반영 시점
-(3) 환율/헤지
-(4) 데이터 소스/반올림
-
-이 펀드는 실제 현금 유입·유출은 없으며,성과 요약표에 산출된 Flow 수치는
-계산상 분리된 외부 요인으로 해석해야 함
-
-단, **입력 데이터로 명시적으로 확인된 항목만 ‘확정’**으로 서술하고,
-그 외는 반드시 **“가능성” 또는 “확인 불가”**로 표현할 것.
-
-입력 데이터에 명시되지 않은 사건
-(예: 전일 자금 이동, 회계적 이월 처리, 시스템 내부 보정 등)은
-절대 가정하거나 서술하지 말 것.
-
-입력 데이터와 모순되는 원인에
-‘추정’, ‘확정’, ‘결정적’ 등의 표현 사용 금지.
-
-원인 분석이 불가능한 경우,
-반드시 **“원인 불명(데이터 부족)”**으로 결론을 유보할 것.
-
-Flow 관련 보조 규칙:
-입력 데이터 상 **‘금일 Flow = 0원’**으로 확인되며,
-이에 반하는 추가 자금 이동의 근거는 입력에 존재하지 않음.
-→ 따라서 NAV–TWR 괴리의 원인으로 확정할 수 없음.
-
-데이터 미제공 또는 확인 불가 상태에서는
-긍정·부정 평가를 내리지 말고,
-반드시 **‘평가 유보’**로 표현할 것.
-
-[출력 형식]
-
-A) 현재 보고 시각과 오늘 한 줄 결론
-
-B) 운용 상태(GREEN / YELLOW / RED)와 근거
-
-상태 분류와 그 근거만 설명할 것
-
-GREEN일 경우에도 행동 권유 문구는 포함하지 말 것
-
-“추가적인 개입 신호는 관찰되지 않음” 수준으로 표현
-
-C) 성과 요약(Return_NAV vs Return_TWR)
-
-차이가 있을 경우, 원인을
-(1) Flow → (2) 배당/세금/수수료 → (3) 환율/헤지 → (4) 데이터 소스/반올림
-순서로 제시
-
-입력으로 확인된 것만 ‘확정’, 나머지는 ‘가능성’ 또는 ‘확인 불가’
-
-D) 리스크 / 드로다운 요약 (DD + MDD)
-
-DD 현재 수준
-
-관측 기간 내 MDD 위치 설명
-
-평가가 아닌 상태 진술 중심
-
-E) 위험관리 지표 설명
-
-입력으로 제공된 모든 리스크 지표를 빠짐없이 1줄씩 설명
-
-“높을수록/낮을수록 바람직한지”는 일반적 정의로만 설명
-
-수치 미제공 시 평가는 유보
-
-F) 데이터 / 운영상 이슈 (경고 / 오류)
-
-G) 원칙 리마인드 (규칙 유지 / 행동 없음)
-
-사전 정의된 운용 규칙에 따른 상태 유지 문구만 사용
-
-H) 시장 지표 요약
-
-오늘의 미국 주식시장 상황 1줄
-
-현재 원·달러 환율 숫자 + 환율 동향 1줄, 환율은 전일대비 상승 하락분을 숫자로 표현
-
-환율은 공신력있는 기관을 조회해서 참고하여 틀리지 않도록 할 것
-
-미국 IEF ETF가 참고하는 미국채 수익률을 숫자로 1줄
-
-I) 오늘의 주식투자 격언을 랜덤하게 골라서 1줄
-
-상기 내용을 요약 정리하여 3줄로 표현
-
-
-<입력 데이터>
-
-=== [0] 금일 자금흐름/거래 여부(중요) ===
-", flow_text, "
-
-=== [1] 배지/상태 메시지 ===
-", badge_txt, "
-
-=== [2] 성과 요약표 (최근 ", take_last_n_days, "일) ===
-", paste(tab_txt, collapse = "\n"), "
-
-=== [3] Drawdown(현재) ===
-DD_now = ", sprintf("%.6f", dd_now), "
-(예: -0.120000 은 고점 대비 -12%)
-
-=== [3-1] 리스크 지표(PMS 계산값: 아래 항목 전부 설명) ===
-", risk_txt, "
-
-=== [4] Warnings ===
-", warn_txt, "
-
-=== [5] Errors ===
-", err_txt, "
-
-위 입력만으로 작성하세요. 맨위의 [Fund Name], [Report Time]문구 자체는 표시하지 말기 바람.
-최고의 개인투자 포트폴리오 모니터링 시스템을 통해 관찰하고 있다는 안내문으로 끝내줘.
-"
+    "[Fund Name] : ", fund_name, "\n",
+    "[Report Time] : ", report_time_kst, "\n",
+    "\n",
+    "당신은 기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저입니다.\n",
+    "\n",
+    "아래 Portfolio Management System(PMS) 출력 데이터를 바탕으로\n",
+    "오늘의 투자운용 현황을 전문적으로 설명해 주세요.\n",
+    "\n",
+    "조건:\n",
+    "- 예측, 투자 권유, 매수·매도 지시는 하지 말고 해석만 합니다.\n",
+    "- Return_NAV(계좌 변화)와 Return_TWR(운용 성과)의 차이는 반드시 설명합니다.\n",
+    "- 차이가 있을 경우 환율 변동 등 외부 요인은 ‘가능성’으로만 언급합니다.\n",
+    "- 숫자는 입력 데이터에 있는 값만 사용합니다.\n",
+    "- 존댓말, 간결한 기관 운용 리포트 톤으로 작성합니다.\n",
+    "- 벤치마크(", benchmark_name, ") 수익률을 인터넷에서 조회하여 수치 비교를 해주십시오.\n",
+    "\n",
+    "출력 형식:\n",
+    "1) 오늘 한 줄 요약\n",
+    "2) 운용 상태(NORMAL 등) 설명\n",
+    "3) 핵심 요약(KPI: 금일 평가금/전일대비/Return_NAV/Return_TWR/벤치마크 대비)\n",
+    "4) 성과 요약(Return_NAV vs Return_TWR)\n",
+    "5) 드로다운(DD) 상태 설명\n",
+    "6) 데이터/운영상 특이사항\n",
+    "7) 시장 환경 한 줄 요약\n",
+    "\n",
+    "마지막으로 투자자에게 도움이 될만한 오늘의 주식투자 격언을 랜덤하게 골라서 1줄 출력해주세요.\n",
+    "\n",
+    "<입력 데이터>\n",
+    "\n",
+    "=== [0] 금일 자금흐름/거래 여부(중요) ===\n",
+    flow_text, "\n\n",
+    "=== [1] 배지/상태 메시지 ===\n",
+    badge_txt, "\n\n",
+    "=== [1-1] 핵심 요약(KPI) ===\n",
+    kpi_txt, "\n\n",
+    "=== [2] 성과 요약표 (최근 ", take_last_n_days, "일) ===\n",
+    paste(tab_txt, collapse = "\n"), "\n\n",
+    "=== [3] Drawdown(현재) ===\n",
+    "DD_now = ", sprintf("%.6f", dd_now), "\n",
+    "(예: -0.120000 은 고점 대비 -12%)\n\n",
+    "=== [3-1] 리스크 지표(PMS 계산값: 아래 항목 전부 설명) ===\n",
+    risk_txt, "\n\n",
+    "=== [4] Warnings ===\n",
+    warn_txt, "\n\n",
+    "=== [5] Errors ===\n",
+    err_txt, "\n\n",
+    "위 입력만으로 작성하세요. 맨위의 [Fund Name], [Report Time]문구 자체는 표시하지 말기 바랍니다.\n",
+    "저희 개인투자 포트폴리오 모니터링 시스템(PMS)을 이용해주셔서 감사하다는 안내문으로 끝내주세요.\n"
   )
 }
 
