@@ -197,34 +197,8 @@ make_gemini_prompt_pms <- function(
     "- CVaR(95%, 원): ", comma(round(cvar_amt, 0))
   )
   
-  # ---- 최종 프롬프트 ----
-#   paste0(
-#     "당신은 기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저입니다.\n\n",
-#     "조건:\n",
-#     "- 예측/투자권유/매수·매도 지시 금지(해석만)\n",
-#     "- Return_NAV vs Return_TWR 차이 반드시 설명(환율 등은 가능성으로)\n",
-#     "- 존댓말, 기관 리포트 톤\n\n",
-#     "출력 형식:\n",
-#     "1) 오늘 한 줄 요약\n",
-#     "2) 운용 상태 설명\n",
-#     "3) 핵심 요약(KPI)\n",
-#     "4) 성과 요약(Return_NAV vs Return_TWR)\n",
-#     "5) 드로다운 및 위험지표(DD_now/MDD/CVaR)\n",
-#     "6) 특이사항\n",
-#     "7) 시장 환경 한 줄\n\n",
-#     "[Fund Name] : ", fund_name, "\n",
-#     "[Report Time] : ", report_time_kst, " (KST)\n\n",
-#     "=== [0] Flow/거래 ===\n", flow_text, "\n\n",
-#     "=== [1] 배지 ===\n", badge_txt, "\n\n",
-#     "=== [2] KPI ===\n", kpi_txt, "\n\n",
-#     "=== [3] 드로다운/위험지표 ===\n", risk_txt, "\n\n",
-#     "=== [4] 최근 ", take_last_n_days, "일 원자료(dd tail) ===\n",
-#     paste(tab_txt, collapse = "\n"), "\n\n",
-#     "=== [5] Warnings ===\n", warn_txt, "\n\n",
-#     "=== [6] Errors ===\n", err_txt, "\n\n",
-#     "위 입력만으로 작성하세요.\n"
-#   )
-# }
+  # 프로그래밍도 중요하지만 Prompt engineering도 중요
+  # 아래 스크립트를 잘 써야지 인공지능이 제대로 답변해 줌
   
     paste0(
       "당신은 연기금·헤지펀드 등 기관 자산운용사에서 다년간 근무한
