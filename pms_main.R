@@ -14,7 +14,7 @@
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
 #         output_sum.csv                      : 평가액총액, 수익금
-#                                               (최소 100@일이상 데이터 필요)
+#                                               (최소 100일이상 데이터 필요)
 #         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
 #         reports/gemini_prompt.txt           : 제미나이 질의어(프롬프트)
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
@@ -22,11 +22,6 @@
 ###############################################
 # 이 코드는 "돈을 얼마나 벌었는지를 관리하지 않는다. 망하지 않을 구조만 관리한다."
 # 위험관리 핵심 3대 지표 : MDD · CVaR · Risk-Off 3개
-
-###############################################
-# PMS(Portfolio Monitoring System) 1.0 / 2025-12-25 메인 스크립트 (루프 버전)
-# 1줄 사용법 : 그냥 Ctrl + Alt + R 키를 누른다(전체 실행)
-###############################################
 
 # =========================================================
 # 패키지 설치/로드
@@ -50,8 +45,8 @@ library(rugarch); library(htmltools)
 # =========================================================
 # 개인별 세팅 변수
 # =========================================================
-wd        <- "c:\\PMS_Core"
-fund_name <- "JS Fund"
+wd        <- "c:\\PMS_Core"  # 작업 디렉토리
+fund_name <- "JS Fund"       # 펀드 이름(멋지게 지어보자)
 
 weights <- c(
   0.36,  # SPY등
@@ -63,12 +58,15 @@ weights <- c(
   0.04   # CASH : 현금이 아니라 종목으로서의 현금을 뜻함
 )
 
-weights <- setNames(weights, c("SPY_ETC","SCHD","QQQ","TQQQ","GOLD","IEF","CASH"))
+REPEAT_FLAG = TRUE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
 
+# =========================================================
+# 개인별 세팅 변수 끝
+# =========================================================
+
+weights <- setNames(weights, c("SPY_ETC","SCHD","QQQ","TQQQ","GOLD","IEF","CASH"))
 setwd(wd)
 options(scipen = 999)
-
-REPEAT_FLAG = TRUE
 
 # 리스크 + 팩터 + PCA 모듈 로드
 source("risk_module.R")
@@ -301,15 +299,12 @@ repeat {
       profit_value <- round(last_value1_2 + last_value2_2, 0)
       
       # ---------------------------------------------------------
-      # ★ 현금성(CASH_LIKE) 별도 관리 (KOFR/BIL//GOV/MMF/CMA 등)
-      # - KOFR/BIL/SGOV이 종목 테이블(rt)에 '종목행'으로 안 들어오는 구조라면
-      #   여기서 cash_like로 따로 넣어야 비중/드리프트가 정상 작동합니다.
+      #  현금성(CASH_LIKE) 별도 관리 (KOFR/BIL//GOV/MMF/CMA 등)
       # ---------------------------------------------------------
       cash_like <- 0  # ★ 현금성 금액(원). 필요 시 수동 입력/연동
       
       sum_value <- round(sum_value + cash_like, 0)
-      
-      
+
       result <- data.frame(Date = today, Sum = sum_value, Profit = profit_value)
       
       # output_sum.csv 갱신
@@ -595,14 +590,14 @@ repeat {
                         전일대비, 전일대비율, 비중, 총매수금, 총수익금, 총수익률)
         
         # =========================================================
-        # 자산군 합계/비중 계산 (CASH는 cash_like로 별도 관리)
+        # 자산군 합계/비중 계산
         # =========================================================
         
-        # 1) 종목 합(=rt에 들어온 자산)과 총합(종목+현금성) 분리
+        # 종목 합(=rt에 들어온 자산)과 총합(종목+현금성) 분리
         today_tsum_stock <- sum(rt$한화평가금, na.rm = TRUE)  # 종목합
         today_tsum       <- today_tsum_stock + cash_like       # 총합(종목 + 현금성)
         
-        # 2) 종목명 기반 버킷 집계 (필요시 키워드 보완)
+        # 종목명 기반 버킷 집계 (필요시 키워드 보완)
         asset_SCHD <- rt %>% filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
         
@@ -617,27 +612,27 @@ repeat {
         
         asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-        
-        # 3) NA 방탄
+
+        # NA 방탄
         asset_SCHD[is.na(asset_SCHD)] <- 0
         asset_QQQ[is.na(asset_QQQ)]   <- 0
         asset_TQQQ[is.na(asset_TQQQ)] <- 0
         asset_GLD[is.na(asset_GLD)]   <- 0
         asset_IEF[is.na(asset_IEF)]   <- 0
         
-        # 4) CASH는 KOFR/BIL/SGOV 종목(현금성 ETF)로 정의
+        # CASH는 KOFR/BIL/SGOV 종목(현금성 ETF)로 정의
         asset_CASH <- rt %>%
           filter(str_detect(종목명, "KOFR|BIL|SGOV")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
           pull(합계)
         asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
         
-        # 5) SPY_ETC는 "종목 중 나머지"로 정의 (현금성 제외)
+        # SPY_ETC는 "종목 중 나머지"로 정의
         asset_SPY_ETC <- today_tsum_stock - asset_SCHD - asset_QQQ - asset_TQQQ - asset_GLD - asset_IEF - asset_CASH
         
         asset_SPY_ETC[is.na(asset_SPY_ETC)] <- 0
         
-        # 6) 비중(%)은 총합(today_tsum = 종목+현금성) 기준
+        # 비중(%)은 총합(today_tsum = 종목+현금성) 기준
         asset_SCHD_ratio    <- asset_SCHD    / today_tsum * 100
         asset_QQQ_ratio     <- asset_QQQ     / today_tsum * 100
         asset_TQQQ_ratio    <- asset_TQQQ    / today_tsum * 100
@@ -646,7 +641,7 @@ repeat {
         asset_CASH_ratio    <- asset_CASH    / today_tsum * 100
         asset_SPY_ETC_ratio <- asset_SPY_ETC / today_tsum * 100
         
-        # 7) drift용 current_weights (합=1)
+        # drift용 current_weights (합=1)
         current_weights <- c(
           SPY_ETC = asset_SPY_ETC_ratio / 100,
           SCHD    = asset_SCHD_ratio    / 100,
@@ -661,7 +656,6 @@ repeat {
         cat("[CHECK] ratios sum = ",
             asset_SPY_ETC_ratio + asset_SCHD_ratio + asset_QQQ_ratio + asset_TQQQ_ratio +
               asset_GLD_ratio + asset_IEF_ratio + asset_CASH_ratio, "\n")
-        
         
         # =========================================================
         # 리스크 모듈 추가 실행
@@ -864,9 +858,8 @@ repeat {
           cur_dd_pct <- as.numeric(tail(dd_plot$DD, 1)) * 100
           cur_dd_amt <- as.numeric(tail(dd_plot$Sum, 1) - tail(dd_plot$Peak, 1))
           
-
           # DD는 (Sum/Peak - 1) 형태의 음수 값
-          # 1) 선을 그라데이션 세그먼트로 그리기 위한 데이터(전일→금일 구간)
+          # 선을 그라데이션 세그먼트로 그리기 위한 데이터(전일→금일 구간)
           dd_seg <- dd_plot %>%
             arrange(Date) %>%
             mutate(
@@ -876,7 +869,7 @@ repeat {
             ) %>%
             filter(!is.na(Date_prev), !is.na(DD_prev), !is.na(DD))
           
-          # 2) 그라데이션에 사용할 "구간 대표값" (전일/금일 평균)
+          # 그라데이션에 사용할 "구간 대표값" (전일/금일 평균)
           dd_seg <- dd_seg %>%
             mutate(DD_mid = (DD_prev + DD) / 2)
           
@@ -885,7 +878,7 @@ repeat {
           midpt  <- -0.06  #  0이 아니라 '약간 음수' (원하시면 -0.03 ~ -0.10 사이로 조절)
           
           p_dd <- ggplot() +
-            # ✅ DD 그라데이션 라인: 세그먼트로 연결
+            #  DD 그라데이션 라인: 세그먼트로 연결
             geom_segment(
               data = dd_seg,
               aes(
@@ -927,14 +920,6 @@ repeat {
               sec.axis = sec_axis(~ (. - scale_b)/scale_a, name = "63D Volatility (Annualized %)")
             ) +
             
-            # # 더 내려가면(더 음수) 빨강, 0에 가까우면 파랑
-            # scale_color_gradient2(
-            #   low = "red4",          # 아래쪽(더 음수) = 확실한 빨강
-            #   mid = "grey92",        # 중간 = 중립
-            #   high = "dodgerblue4",  # 위쪽(0 근처) = 확실한 파랑
-            #   midpoint = midpt,
-            #   limits = c(dd_min, dd_max)
-            # ) +
             scale_color_gradient(
               low  = "red3",        # 아래쪽: 확실한 빨강
               high = "dodgerblue4", # 위쪽: 확실한 파랑
@@ -958,7 +943,6 @@ repeat {
           # =========================================================
           #  비중 막대 그래프 (위: 목표 / 아래: 현재) 
           # =========================================================
-          
           weight_bar_df <- data.frame(
             Asset = factor(
               c("SPY등", "SCHD", "QQQ", "TQQQ", "금", "채권", "현금"),
@@ -1040,7 +1024,6 @@ repeat {
               panel.grid.minor = element_blank(),
               plot.margin = margin(2, 10, 2, 10)
             )
-          
           
           # =========================================================
           # combined_plot 결합
