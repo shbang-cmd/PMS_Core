@@ -827,24 +827,45 @@ run_var_cvar_from_file <- function(
     return(invisible(NULL))
   }
   
-  rets <- read_csv(asset_file, show_col_types = FALSE)
+  rets <- readr::read_csv(asset_file, show_col_types = FALSE)
   if (!"Date" %in% colnames(rets)) {
     stop("VaR/CVaR: asset_returns_monthly.csv에 'Date' 컬럼이 필요합니다.")
   }
   rets$Date <- as.Date(rets$Date)
   
   asset_cols <- setdiff(colnames(rets), "Date")
-  R_mat      <- as.matrix(rets[, asset_cols])
+  R_mat_all  <- as.matrix(rets[, asset_cols])
   
-  if (length(weights) != ncol(R_mat)) {
-    stop("VaR/CVaR: weights 길이와 자산 열 개수가 다릅니다.")
+  # ✅ weights 이름 기반 매핑 (PCA와 동일 컨셉)
+  name_map <- c(
+    "SPY_ETC" = "SPY",
+    "GOLD"    = "GLD"
+    # "CASH"는 asset_returns_monthly.csv에 없으므로 자동 제외될 것
+  )
+  w <- weights
+  nm <- names(w)
+  nm <- ifelse(nm %in% names(name_map), unname(name_map[nm]), nm)
+  names(w) <- nm
+  
+  # ✅ 공통 자산만 사용 (이게 핵심)
+  common_assets <- intersect(asset_cols, names(w))
+  if (length(common_assets) < 2) {
+    stop(paste0("VaR/CVaR: 공통 자산이 부족합니다. ",
+                "CSV=", paste(asset_cols, collapse=", "),
+                " / weights=", paste(names(w), collapse=", ")))
   }
   
-  if (abs(sum(weights) - 1) > 1e-6) {
-    weights <- weights / sum(weights)
-  }
+  # 공통 자산 순서로 정렬
+  R_mat <- as.matrix(rets[, common_assets, drop = FALSE])
+  w_use <- w[common_assets]
   
-  port_ret <- as.numeric(R_mat %*% weights)   # 월간 포트 수익률
+  # 정규화
+  w_use[w_use < 0] <- 0
+  if (sum(w_use) <= 0) stop("VaR/CVaR: weights 합이 0 이하입니다.")
+  w_use <- w_use / sum(w_use)
+  
+  # 포트 수익률(월간)
+  port_ret <- as.numeric(R_mat %*% as.numeric(w_use))
   port_ret <- port_ret[is.finite(port_ret)]
   
   if (length(port_ret) < 20) {
@@ -861,6 +882,7 @@ run_var_cvar_from_file <- function(
   
   cat("\n[리스크] VaR / CVaR 계산 (월간 기준 수익률)\n")
   cat("========================================\n")
+  cat(" 사용 자산:", paste(common_assets, collapse = ", "), "\n")
   cat(" 신뢰수준(α) :", alpha * 100, "%\n")
   cat(" 표본 개수   :", length(port_ret), "개월\n")
   cat("----------------------------------------\n")
@@ -876,7 +898,9 @@ run_var_cvar_from_file <- function(
     var_pct  = var_pct,
     cvar_pct = cvar_pct,
     var_amt  = var_amt,
-    cvar_amt = cvar_amt
+    cvar_amt = cvar_amt,
+    assets_used = common_assets,
+    weights_used = w_use
   ))
 }
 

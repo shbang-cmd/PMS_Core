@@ -14,7 +14,7 @@
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
 #         output_sum.csv                      : 평가액총액, 수익금
-#                                               (최소 100일이상 데이터 필요)
+#                                               (최소 100@일이상 데이터 필요)
 #         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
 #         reports/gemini_prompt.txt           : 제미나이 질의어(프롬프트)
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
@@ -112,54 +112,27 @@ add_twr_return_to_dd <- function(dd, ret_clip = 0.5, flow_deadband = 1000) {
 # =========================================================
 # Gemini Prompt 생성
 # =========================================================
-make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
-                                   fund_name = "JS Fund",
-                                   report_time_kst = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-                                   flow_text = "금일 Flow(입출금): 0원 / 매수·매도: 없음(거래 0건)",
-                                   risk_metrics = NULL,
-                                   warnings_vec = character(0),
-                                   errors_vec   = character(0),
-                                   take_last_n_days = 2,
-                                   benchmark_name = "SPY",
-                                   benchmark_ret  = NULL) {
+make_gemini_prompt_pms <- function(
+    dd,
+    sum_xts,
+    badge_text = NULL,
+    fund_name = "JS Fund",
+    report_time_kst = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    flow_text = "금일 Flow(입출금): 0원 / 매수·매도: 없음(거래 0건)",
+    warnings_vec = character(0),
+    errors_vec   = character(0),
+    take_last_n_days = 2,
+    benchmark_name = "SPY",
+    benchmark_ret  = NA_real_,
+    # ✅ 딱 두 개만 받음
+    cvar_amt = NA_real_,   # CVaR (원)
+    pa_mdd   = NA_real_    # MDD (비율, 음수)
+) {
   
   if (is.null(dd) || NROW(dd) == 0) stop("dd가 비어 있습니다.")
   if (is.null(sum_xts) || NROW(sum_xts) == 0) stop("sum_xts가 비어 있습니다.")
   
-  dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
-  dd_tail <- utils::tail(dd, take_last_n_days)
-  tab_txt <- utils::capture.output(print(dd_tail))
-  
-  badge_txt <- if (!is.null(badge_text) && nzchar(badge_text)) badge_text else "(미제공)"
-  warn_txt  <- if (length(warnings_vec) > 0) paste0("- ", warnings_vec, collapse = "\n") else "(없음)"
-  err_txt   <- if (length(errors_vec)  > 0) paste0("- ", errors_vec,  collapse = "\n") else "(없음)"
-  
-  risk_txt <- "(미제공)"
-  if (!is.null(risk_metrics)) {
-    if (is.data.frame(risk_metrics)) {
-      risk_txt <- paste(utils::capture.output(print(risk_metrics)), collapse = "\n")
-    } else if (is.list(risk_metrics)) {
-      nm <- names(risk_metrics)
-      lines <- paste0("- ", nm, " = ", sapply(risk_metrics, function(x) {
-        if (length(x) == 0 || is.na(x)) return("NA")
-        if (is.numeric(x)) return(formatC(x, digits = 6, format = "fg", flag = "#"))
-        as.character(x)
-      }))
-      risk_txt <- paste(lines, collapse = "\n")
-    } else {
-      risk_txt <- as.character(risk_metrics)
-    }
-  }
-  
-  last_row <- dd[NROW(dd), , drop = FALSE]
-  nav_today <- if ("Sum" %in% names(last_row)) as.numeric(last_row$Sum) else NA_real_
-  nav_prev  <- if ("Sum_lag" %in% names(last_row)) as.numeric(last_row$Sum_lag) else NA_real_
-  nav_diff  <- nav_today - nav_prev
-  nav_diff_pct <- if (is.finite(nav_prev) && nav_prev != 0) nav_diff / nav_prev else NA_real_
-  
-  ret_nav <- if ("Return_NAV" %in% names(last_row)) as.numeric(last_row$Return_NAV) else NA_real_
-  ret_twr <- if ("Return_TWR" %in% names(last_row)) as.numeric(last_row$Return_TWR) else NA_real_
-  
+  # ---- 유틸 포맷 ----
   fmt_comma <- function(x) {
     if (!is.finite(x)) return("(미제공)")
     if (requireNamespace("scales", quietly = TRUE)) return(scales::comma(x))
@@ -170,15 +143,42 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
     if (requireNamespace("scales", quietly = TRUE)) return(scales::percent(x, accuracy = acc))
     paste0(round(x * 100, 2), "%")
   }
+  fmt_cvar_amt <- function(x) {
+    if (!is.finite(x)) return("(미제공)")
+    paste0(fmt_comma(x), "원")
+  }
   
-  bm_line <- if (!is.null(benchmark_ret) && is.finite(benchmark_ret)) {
+  # ---- DD_now ----
+  dd_now <- as.numeric(tail((sum_xts / cummax(sum_xts)) - 1, 1))
+  
+  # ---- 최근 N일 표 ----
+  dd_tail <- utils::tail(dd, take_last_n_days)
+  tab_txt <- utils::capture.output(print(dd_tail))
+  
+  # ---- 배지/경고/에러 ----
+  badge_txt <- if (!is.null(badge_text) && nzchar(badge_text)) badge_text else "(미제공)"
+  warn_txt  <- if (length(warnings_vec) > 0) paste0("- ", warnings_vec, collapse = "\n") else "(없음)"
+  err_txt   <- if (length(errors_vec)  > 0) paste0("- ", errors_vec,  collapse = "\n") else "(없음)"
+  
+  # ---- KPI: dd 마지막 행 기준 ----
+  last_row <- dd[NROW(dd), , drop = FALSE]
+  
+  nav_today <- if ("Sum" %in% names(last_row)) as.numeric(last_row$Sum) else NA_real_
+  nav_prev  <- if ("Sum_lag" %in% names(last_row)) as.numeric(last_row$Sum_lag) else NA_real_
+  nav_diff  <- nav_today - nav_prev
+  nav_diff_pct <- if (is.finite(nav_prev) && nav_prev != 0) nav_diff / nav_prev else NA_real_
+  
+  ret_nav <- if ("Return_NAV" %in% names(last_row)) as.numeric(last_row$Return_NAV) else NA_real_
+  ret_twr <- if ("Return_TWR" %in% names(last_row)) as.numeric(last_row$Return_TWR) else NA_real_
+  
+  bm_line <- if (is.finite(benchmark_ret)) {
     paste0("- 벤치마크(", benchmark_name, ") 금일 수익률: ", fmt_pct(benchmark_ret, acc = 0.01))
   } else {
     paste0("- 벤치마크(", benchmark_name, ") 금일 수익률: (미제공 → 평가 유보)")
   }
   
-  rel_line <- if (!is.null(benchmark_ret) && is.finite(benchmark_ret) && is.finite(ret_twr)) {
-    paste0("- ", benchmark_name, " 대비 상대성과(금일, TWR 기준): ", fmt_pct(ret_twr - benchmark_ret, acc = 0.01))
+  rel_line <- if (is.finite(benchmark_ret) && is.finite(ret_twr)) {
+    paste0("- ", benchmark_name, " 대비 상대성과(금일, TWR): ", fmt_pct(ret_twr - benchmark_ret, acc = 0.01))
   } else {
     paste0("- ", benchmark_name, " 대비 상대성과: (평가 유보)")
   }
@@ -192,6 +192,14 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
     rel_line
   )
   
+  # ---- 핵심 위험지표 ----
+  risk_txt <- paste0(
+    "- 현재 드로다운(DD_now): ", fmt_pct(dd_now, acc = 0.01), "\n",
+    "- 최대낙폭(MDD(%)): ", round(pa_mdd*100, 2), "\n",
+    "- CVaR(95%, 원): ", comma(round(cvar_amt, 0))
+  )
+  
+  # ---- 최종 프롬프트 ----
   paste0(
     "당신은 기관 자산운용사(연기금/헤지펀드) 출신의 수석 펀드매니저입니다.\n\n",
     "조건:\n",
@@ -203,23 +211,23 @@ make_gemini_prompt_pms <- function(dd, sum_xts, badge_text = NULL,
     "2) 운용 상태 설명\n",
     "3) 핵심 요약(KPI)\n",
     "4) 성과 요약(Return_NAV vs Return_TWR)\n",
-    "5) 드로다운 상태\n",
+    "5) 드로다운 및 위험지표(DD_now/MDD/CVaR)\n",
     "6) 특이사항\n",
     "7) 시장 환경 한 줄\n\n",
-    "<입력 데이터>\n\n",
+    "[Fund Name] : ", fund_name, "\n",
+    "[Report Time] : ", report_time_kst, " (KST)\n\n",
     "=== [0] Flow/거래 ===\n", flow_text, "\n\n",
     "=== [1] 배지 ===\n", badge_txt, "\n\n",
-    "=== [1-1] KPI ===\n", kpi_txt, "\n\n",
-    "=== [2] 최근 ", take_last_n_days, "일 ===\n",
+    "=== [2] KPI ===\n", kpi_txt, "\n\n",
+    "=== [3] 드로다운/위험지표 ===\n", risk_txt, "\n\n",
+    "=== [4] 최근 ", take_last_n_days, "일 원자료(dd tail) ===\n",
     paste(tab_txt, collapse = "\n"), "\n\n",
-    "=== [3] DD_now ===\n",
-    "DD_now = ", sprintf("%.6f", dd_now), "\n\n",
-    "=== [3-1] 리스크지표 ===\n", risk_txt, "\n\n",
-    "=== [4] Warnings ===\n", warn_txt, "\n\n",
-    "=== [5] Errors ===\n", err_txt, "\n\n",
+    "=== [5] Warnings ===\n", warn_txt, "\n\n",
+    "=== [6] Errors ===\n", err_txt, "\n\n",
     "위 입력만으로 작성하세요.\n"
   )
 }
+
 
 save_if_changed <- function(text, file_path) {
   old <- if (file.exists(file_path)) paste(readLines(file_path, warn = FALSE), collapse = "\n") else ""
@@ -293,8 +301,8 @@ repeat {
       profit_value <- round(last_value1_2 + last_value2_2, 0)
       
       # ---------------------------------------------------------
-      # ★ 현금성(CASH_LIKE) 별도 관리 (KOFR/BIL/MMF/CMA 등)
-      # - KOFR/BIL이 종목 테이블(rt)에 '종목행'으로 안 들어오는 구조라면
+      # ★ 현금성(CASH_LIKE) 별도 관리 (KOFR/BIL//GOV/MMF/CMA 등)
+      # - KOFR/BIL/SGOV이 종목 테이블(rt)에 '종목행'으로 안 들어오는 구조라면
       #   여기서 cash_like로 따로 넣어야 비중/드리프트가 정상 작동합니다.
       # ---------------------------------------------------------
       cash_like <- 0  # ★ 현금성 금액(원). 필요 시 수동 입력/연동
@@ -617,9 +625,9 @@ repeat {
         asset_GLD[is.na(asset_GLD)]   <- 0
         asset_IEF[is.na(asset_IEF)]   <- 0
         
-        # 4) CASH는 KOFR/BIL 종목(현금성 ETF)로 정의
+        # 4) CASH는 KOFR/BIL/SGOV 종목(현금성 ETF)로 정의
         asset_CASH <- rt %>%
-          filter(str_detect(종목명, "KOFR|BIL")) %>%
+          filter(str_detect(종목명, "KOFR|BIL|SGOV")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
           pull(합계)
         asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
@@ -757,12 +765,12 @@ repeat {
           
           # ---------- 상단 플롯(p) ----------
           p <- ggplot(dd_plot_base, aes(x = Date)) +
-            geom_point(aes(y = sum_left, color = Profit / 10000000), size = 5) +
-            geom_line(aes(y = sum_left, group = 1), color = "gray") +
+            geom_point(aes(y = sum_left, color = Profit / 10000000), size = 5, na.rm = TRUE) +
+            geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
             geom_smooth(aes(y = sum_left), method = "lm", formula = y ~ x, se = FALSE,
                         color = "orange", linetype = "dashed", linewidth = 1) +
-            geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1) +
-            geom_point(aes(y = a * ret_right + b), color = "green", size = 2) +
+            geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
+            geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
             geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
             scale_color_gradient(low = "red", high = "blue") +
             scale_x_date(limits = common_date_range,
@@ -810,7 +818,7 @@ repeat {
                      width=1, alpha=0.5, na.rm=TRUE) +
             geom_hline(yintercept = rescale_b, color="gold", linewidth=0.8, alpha=0.6) +
             geom_line(aes(y = Return_pct * rescale_a + rescale_b),
-                      color="#F4A261", linewidth=1) +
+                      color="#F4A261", linewidth=1, na.rm = TRUE) +
             scale_fill_manual(values=c("Plus"="dodgerblue4","Minus"="firebrick3")) +
             scale_x_date(limits = common_date_range,
                          date_breaks = "2 months",
@@ -856,36 +864,99 @@ repeat {
           cur_dd_pct <- as.numeric(tail(dd_plot$DD, 1)) * 100
           cur_dd_amt <- as.numeric(tail(dd_plot$Sum, 1) - tail(dd_plot$Peak, 1))
           
-          p_dd <- ggplot(dd_plot, aes(x = Date)) +
-            geom_line(aes(y = DD * 100), linewidth = 2) +
-            geom_line(aes(y = scale_a * (Vol63 * 100) + scale_b),
-                      color = "purple", linewidth = 1, linetype = "dashed") +
+
+          # DD는 (Sum/Peak - 1) 형태의 음수 값
+          # 1) 선을 그라데이션 세그먼트로 그리기 위한 데이터(전일→금일 구간)
+          dd_seg <- dd_plot %>%
+            arrange(Date) %>%
+            mutate(
+              Date_prev = lag(Date),
+              DD_prev   = lag(DD),
+              Vol_prev  = lag(Vol63)
+            ) %>%
+            filter(!is.na(Date_prev), !is.na(DD_prev), !is.na(DD))
+          
+          # 2) 그라데이션에 사용할 "구간 대표값" (전일/금일 평균)
+          dd_seg <- dd_seg %>%
+            mutate(DD_mid = (DD_prev + DD) / 2)
+          
+          dd_min <- min(dd_seg$DD_mid, na.rm = TRUE)
+          dd_max <- max(dd_seg$DD_mid, na.rm = TRUE)   # 보통 0 근처
+          midpt  <- -0.06  #  0이 아니라 '약간 음수' (원하시면 -0.03 ~ -0.10 사이로 조절)
+          
+          p_dd <- ggplot() +
+            # ✅ DD 그라데이션 라인: 세그먼트로 연결
+            geom_segment(
+              data = dd_seg,
+              aes(
+                x = Date_prev, xend = Date,
+                y = DD_prev * 100, yend = DD * 100,
+                color = DD_mid
+              ),
+              linewidth = 2,
+              lineend = "round"
+            ) +
+            
+            # Vol(기존 유지: 보라색 점선)
+            geom_line(
+              data = dd_plot,
+              aes(x = Date, y = scale_a * (Vol63 * 100) + scale_b),
+              color = "purple", linewidth = 1, linetype = "dashed", na.rm = TRUE
+            ) +
+            
             geom_hline(yintercept = 0, color = "gray50") +
             geom_hline(yintercept = c(-5, -10, -15), linetype="dotted", color="gray70") +
             geom_vline(xintercept = c(mdd_start_date, mdd_end_date), linetype="dashed") +
-            annotate("label", x=mdd_start_date, y=-2, label=peak_label, size=3.2, fill="white") +
-            annotate("label", x=mdd_end_date, y=(mdd_value*100)+5, label=trough_label, size=3.2, fill="white") +
-            annotate("label", x=mdd_end_date, y=(mdd_value*100)+10,
-                     label=paste0("MDD: ", scales::percent(-mdd_value, accuracy=0.01)),
-                     size=3.2, fill="white") +
-            scale_x_date(limits = common_date_range,
-                         date_breaks = "2 months",
-                         labels = scales::label_date_short(),
-                         expand = c(0, 0)) +
-            scale_y_continuous(name="Drawdown (%)",
-                               sec.axis = sec_axis(~ (. - scale_b)/scale_a, name="63D Volatility (Annualized %)")) +
-            labs(title=paste0("Drawdown (현재: ", sprintf("%.2f%%", cur_dd_pct),
-                              ", 피크대비: ", scales::comma(cur_dd_amt), "원)"),
-                 x="날짜(연/월)") +
-            theme_minimal(base_size=13) +
-            theme(axis.title.y.right=element_text(color="purple", size=9),
-                  legend.position="none")
+            
+            annotate("label", x = mdd_start_date, y = -2, label = peak_label,
+                     size = 3.2, fill = "white") +
+            annotate("label", x = mdd_end_date, y = (mdd_value*100)+5, label = trough_label,
+                     size = 3.2, fill = "white") +
+            annotate("label", x = mdd_end_date, y = (mdd_value*100)+10,
+                     label = paste0("MDD: ", scales::percent(-mdd_value, accuracy=0.01)),
+                     size = 3.2, fill = "white") +
+            
+            scale_x_date(
+              limits = common_date_range,
+              date_breaks = "2 months",
+              labels = scales::label_date_short(),
+              expand = c(0, 0)
+            ) +
+            scale_y_continuous(
+              name = "Drawdown (%)",
+              sec.axis = sec_axis(~ (. - scale_b)/scale_a, name = "63D Volatility (Annualized %)")
+            ) +
+            
+            # # 더 내려가면(더 음수) 빨강, 0에 가까우면 파랑
+            # scale_color_gradient2(
+            #   low = "red4",          # 아래쪽(더 음수) = 확실한 빨강
+            #   mid = "grey92",        # 중간 = 중립
+            #   high = "dodgerblue4",  # 위쪽(0 근처) = 확실한 파랑
+            #   midpoint = midpt,
+            #   limits = c(dd_min, dd_max)
+            # ) +
+            scale_color_gradient(
+              low  = "red3",        # 아래쪽: 확실한 빨강
+              high = "dodgerblue4", # 위쪽: 확실한 파랑
+              limits = c(dd_min, dd_max)
+            ) +
+          
+            labs(
+              title = paste0(
+                "Drawdown (현재: ", sprintf("%.2f%%", cur_dd_pct),
+                ", 피크대비: ", scales::comma(cur_dd_amt), "원)"
+              ),
+              x = "날짜(연/월)"
+            ) +
+            theme_minimal(base_size = 13) +
+            theme(
+              axis.title.y.right = element_text(color = "purple", size = 9),
+              legend.position = "none"
+            )
+          
           
           # =========================================================
-          # ✅✅✅ [핵심 수정] 비중 막대 그래프 (Target/Current)
-          # =========================================================
-          # =========================================================
-          #  비중 막대 그래프 (위: 목표 / 아래: 현재)  [정상 버전]
+          #  비중 막대 그래프 (위: 목표 / 아래: 현재) 
           # =========================================================
           
           weight_bar_df <- data.frame(
@@ -1021,13 +1092,15 @@ repeat {
       
       warnings_vec <- if (exists("warnings_vec")) warnings_vec else character(0)
       errors_vec   <- if (exists("errors_vec"))   errors_vec   else character(0)
-      
+
       prompt_text <- make_gemini_prompt_pms(
-        dd = dd, sum_xts = sum_xts,
+        dd = dd,
+        sum_xts = sum_xts,
         badge_text = badge_text,
-        warnings_vec = warnings_vec,
-        errors_vec = errors_vec,
-        take_last_n_days = 2
+        fund_name = fund_name,
+        take_last_n_days = 2,
+        cvar_amt = cvar_amt,
+        pa_mdd   = pa_mdd
       )
       
       changed <- save_if_changed(prompt_text, PROMPT_FILE)
