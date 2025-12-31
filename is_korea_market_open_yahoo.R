@@ -77,3 +77,8 @@ if (is_korea_market_open_yahoo(close_only = TRUE)) {
   cat("⛔ (장 마감 기준) 오늘은 휴장/미확정입니다.\n")
 }
 
+# 코드에서 사용법 : 아래와 같이 하면 거래소 시장이 안열리는날 더 이상 실행안하고 종료됨
+# if (!is_korea_market_open_yahoo(close_only = TRUE)) {
+#   quit(save = "no", status = 0)
+# }
+
