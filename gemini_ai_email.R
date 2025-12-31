@@ -10,6 +10,15 @@ library(httr2)
 library(glue)
 library(jsonlite)
 
+source("is_korea_market_open_yahoo.R")
+
+# 거래소 시장이 안열리는날 더 이상 실행안하고 종료
+if (!is_korea_market_open_yahoo(close_only = TRUE)) {
+  cat("휴장일이라 메일 송신 안합니다.\n")
+  quit(save = "no", status = 0) 
+  # save = "no"를 설정하지 않으면 시스템이 종료되지 않고 대기 상태에 빠져 전체 자동화 프로세스가 멈추는 리스크가 발생, status = 0 : "임무 성공(Success)"의 의미
+}
+
 # ------------------------------------------------------------
 # 유틸
 # ------------------------------------------------------------

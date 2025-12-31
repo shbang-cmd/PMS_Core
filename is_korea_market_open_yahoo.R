@@ -64,18 +64,20 @@ is_korea_market_open_yahoo <- function(
 # ------------------------
 
 # (1) "오늘 개장일인가?"  → 장중에도 TRUE가 나올 수 있음(오늘 데이터가 이미 올라온 경우)
-if (is_korea_market_open_yahoo()) {
-  cat("✅ 오늘은 한국 주식시장 개장일(거래일)로 판단됩니다.\n")
-} else {
-  cat("⛔ 오늘은 휴장 또는 아직 확인 불가로 판단됩니다.\n")
-}
 
-# (2) 보수적으로: 장 마감 이후에만 TRUE (PMS를 16시 이후에 돌리면 권장)
-if (is_korea_market_open_yahoo(close_only = TRUE)) {
-  cat("✅ (장 마감 기준) 오늘은 개장일로 확정됩니다.\n")
-} else {
-  cat("⛔ (장 마감 기준) 오늘은 휴장/미확정입니다.\n")
-}
+# 확인용 :
+# if (is_korea_market_open_yahoo()) {
+#   cat("✅ 오늘은 한국 주식시장 개장일(거래일)로 판단됩니다.\n")
+# } else {
+#   cat("⛔ 오늘은 휴장 또는 아직 확인 불가로 판단됩니다.\n")
+# }
+# 
+# # (2) 보수적으로: 장 마감 이후에만 TRUE (PMS를 16시 이후에 돌리면 권장)
+# if (is_korea_market_open_yahoo(close_only = TRUE)) {
+#   cat("✅ (장 마감 기준) 오늘은 개장일로 확정됩니다.\n")
+# } else {
+#   cat("⛔ (장 마감 기준) 오늘은 휴장/미확정입니다.\n")
+# }
 
 # 코드에서 사용법 : 아래와 같이 하면 거래소 시장이 안열리는날 더 이상 실행안하고 종료됨
 # if (!is_korea_market_open_yahoo(close_only = TRUE)) {
