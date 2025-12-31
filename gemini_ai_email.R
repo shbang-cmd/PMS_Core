@@ -142,7 +142,7 @@ to <- "seminago@naver.com"  # 수신 메일 지정
 # 만약 수신인이 2명이상이면 아래 예시처럼 사용
 # to <- c("manager1@jsfund.com", "manager2@jsfund.com", "cio@jsfund.com")
 
-subject <- sprintf("[오늘의 PMS 현황 보고드립니다] %s", format(now_kst, "%Y-%m-%d"))
+subject <- sprintf("[PMS 자산현황 AI보고] %s", format(now_kst, "%Y-%m-%d"))
 
 email <- compose_email(
   body = md(glue("

@@ -790,7 +790,7 @@ repeat {
                           fontWeight=styleInterval(0, c("bold","normal")))
           )
           
-          # ---------- label_text ----------
+          # ---------- label_text 화면에 표시할 글자 ----------
           label_text <- paste0(
             "오늘평가액 : ", comma(round(sum_value, 0)), "원   ",
             "총수익 : ", comma(round(tail(dd$Profit, 1), 0)),"원",
@@ -809,7 +809,23 @@ repeat {
             "원 (",
             ifelse((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) >= 0, "+", ""),
             round((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) * 100 / tail(dd$Sum, 1), 2),
-            "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n"
+            "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
+            "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(목표(억)) = ",
+            round(today_tsum * as.numeric(weights['SPY_ETC']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['SCHD']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['QQQ']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['TQQQ']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['GOLD']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['IEF']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(weights['CASH']/1e8), 1), "\n",
+            "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(현재(억)) = ",
+            round(today_tsum * as.numeric(current_weights['SPY_ETC']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['SCHD']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['QQQ']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['TQQQ']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['GOLD']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['IEF']/1e8), 1), " : ",
+            round(today_tsum * as.numeric(current_weights['CASH']/1e8), 1), "\n"
           )
           
           common_date_range <- range(dd_plot_base$Date, na.rm = TRUE)
