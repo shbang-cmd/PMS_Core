@@ -681,7 +681,7 @@ repeat {
         
         # CASH는 KOFR/BIL/SGOV 종목(현금성 ETF)로 정의
         asset_CASH <- rt %>%
-          filter(str_detect(종목명, "KOFR|BIL|SGOV")) %>%
+          filter(str_detect(종목명, "KOFR|BIL|SGOV|머니마켓")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
           pull(합계)
         asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
