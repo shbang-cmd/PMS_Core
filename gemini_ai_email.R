@@ -29,6 +29,10 @@ if (!is_korea_market_open_yahoo(close_only = TRUE)) {
 # ------------------------------------------------------------
 # 환경변수 : 미리 PC에 세팅을 해놔야 함
 # 검색에서 "환경 변수"라고 입력하면 찾을 수 있음
+ # GMAIL_USER : 지메일 주소(예시 : sample@gmail.com)
+ # GMAIL_APP_PASSWORD : 지메일 앱 암호
+ # GEMINI_API_KEY : 제미나이 키
+ # GEMINI_MODEL : 안넣어도 됨
 # ------------------------------------------------------------
 gmail_user      <- Sys.getenv("GMAIL_USER")
 gmail_pw_envvar <- "GMAIL_APP_PASSWORD" 
