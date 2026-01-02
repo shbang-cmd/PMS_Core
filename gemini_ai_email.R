@@ -28,7 +28,11 @@ if (!is_korea_market_open_yahoo(close_only = TRUE)) {
 
 # ------------------------------------------------------------
 # 환경변수 : 미리 PC에 세팅을 해놔야 함
+# 검색에서 "환경 변수"라고 입력하면 찾을 수 있음
 # ------------------------------------------------------------
+gmail_user      <- Sys.getenv("GMAIL_USER")
+gmail_pw_envvar <- "GMAIL_APP_PASSWORD" 
+
 gemini_key   <- Sys.getenv("GEMINI_API_KEY") %||% ""
 gemini_model <- Sys.getenv("GEMINI_MODEL") %||% "gemini-2.5-flash"
 # GEMINI_MODEL에 "models/gemini-2.5-flash" 형태여도 자동 처리됨
