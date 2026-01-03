@@ -1,0 +1,6 @@
+AI 조회 후 메일발송 루틴 시작합니다.
+AI prompt 조회 시작.
+메일 작성 시작.
+The email message was sent successfully.
+완료: AI 응답 생성 → PDF 첨부 → Gmail 발송 성공 | to=seminago@naver.com | file=C:\PMS_Core\reports\Daily_Risk_20251231.pdf
+메일 발송 정상 종료되었습니다..
