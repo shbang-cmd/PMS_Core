@@ -14,7 +14,7 @@ options(timeout = 120)
 # 1) 패키지 로딩 (운영 스크립트에서는 자동 설치 비추천)
 #    - 설치는 RStudio에서 1회 수행
 # ------------------------------------------------------------
-pkg <- c("blastula", "httr2", "jsonlite", "glue", "quantmod", "xts")  # ✅ xtx -> xts
+pkg <- c("blastula", "httr2", "jsonlite", "glue", "quantmod", "xts")
 
 missing <- setdiff(pkg, rownames(installed.packages()))
 if (length(missing)) {
