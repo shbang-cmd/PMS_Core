@@ -94,7 +94,7 @@ is_korea_market_open_yahoo <- function(
 # 4) 거래소 휴장일이면 종료 (메일 송신 안 함)
 # ------------------------------------------------------------
 if (!is_korea_market_open_yahoo(close_only = TRUE)) {
-  cat("휴장일(또는 장 마감 전/야후 조회 실패)이라 메일 송신 안합니다.\n")
+  cat("휴장일(또는 장 마감 전/야후 조회 실패)이라 메일 송신 안합니다. Market is closed (or before market close, or Yahoo data unavailable). Skipping email delivery.\n")
   quit(save = "no", status = 0)
 }
 
