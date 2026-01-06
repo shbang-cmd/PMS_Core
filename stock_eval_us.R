@@ -115,13 +115,11 @@ exchange_diff <- {
   else paste0("±", num)
 }
 
-
 summary_row_en <-NA
 summary_row_en <- data.frame(종목명 = paste("( 환율", exchange_rate, "적용시 KRW 기준", ")"), 종목번호 = NA, 보유증권사 = NA, 매수가격 = NA, 수량 = NA, 현재가 = NA, 평가금 = total_sum * exchange_rate, 비중 = NA, 수익금 = total_profit * exchange_rate, 수익률 = total_profit / (total_sum - total_profit))
 data <- rbind(data, summary_row_en)
 
 #cat("환율 : ", exchange_rate)
-
 
 # 결과를 엑셀 파일로 저장
 write_xlsx(data, output_file)
@@ -184,5 +182,42 @@ p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = �
   )
 
 print(p_us)
-
 print(paste0(nrow(data)-1, "개 미국종목의 수익금 계산이 완료되었습니다. 결과는", output_file, "에 저장되었습니다."))
+
+
+# S&P500지수를 가져와서 spx 전역변수에 저장(나중에 생성형 인공지능AI에서 벤치마크 분석을 위함)
+get_spx_quantmod <- function() {
+  suppressWarnings(
+    quantmod::getSymbols("^GSPC", src = "yahoo", auto.assign = FALSE)
+  ) -> spx
+  
+  # 종가 기준
+  close_today <- as.numeric(Cl(spx)[NROW(spx)])
+  close_prev  <- as.numeric(Cl(spx)[NROW(spx) - 1])
+  
+  diff <- close_today - close_prev
+  pct  <- round(diff / close_prev * 100, 2)
+  
+  diff_label <- if (diff > 0) {
+    paste0("+", round(diff, 2))
+  } else if (diff < 0) {
+    paste0("-", round(abs(diff), 2))
+  } else {
+    paste0("±0")
+  }
+  
+  list(
+    spx_value = round(close_today, 2),
+    spx_diff = round(diff, 2),
+    spx_diff_label = diff_label,
+    spx_pct = pct
+  )
+}
+
+spx <- get_spx_quantmod()
+# 사용 예
+# spx <- get_spx_quantmod()
+# cat("S&P500 지수 :", spx$spx_value,
+#     "(전일대비:", spx$spx_diff_label,
+#     ", 일간변동률:", spx$spx_pct, "%)\n")
+

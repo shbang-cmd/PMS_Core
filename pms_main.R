@@ -265,7 +265,7 @@ make_gemini_prompt_pms <- function(
         정량 수치 없이 거시적 분위기를 정성적으로 요약할 수 있습니다.
       - 특정 지수 수치, 방향성 예측, 투자 판단은 금지합니다.
       
-      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고 오늘 환화평가금과의 관계를 분석해줘
+      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고 오늘 환화평가금과의 관계 및 아래의 S&P500지수 일간등락의 관계를 함께 분석해줘
 
       9)  마지막 끝낼 때 [오늘의 유머]라고 말머리를 달고 아주 랜덤하게 주식 유머 하나만 짧게 해줘
       
@@ -284,8 +284,8 @@ make_gemini_prompt_pms <- function(
       paste(tab_txt, collapse = "\n"), "\n\n",
       "=== [5] Warnings ===\n", warn_txt, "\n\n",
       "=== [6] Errors ===\n", err_txt, "\n\n",
-      "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n"
-    )
+      "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
+      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n")
   }
 
 
