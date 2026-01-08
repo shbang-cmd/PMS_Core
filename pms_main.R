@@ -1176,7 +1176,11 @@ repeat {
   Sys.sleep(wait_min * 60)
 }
 
-
+# 배치파일로 실행될때는 강제 종료
+# 인터렉티브 모드(RStudio 등)가 아닐 때만 R 세션을 종료
+if (!interactive()) {
+  quit(save = "no")
+}
 
 # 프로그램 후기 :
 # 이 프로그램은 “수익을 만들어주는 엔진”이 아니라

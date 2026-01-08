@@ -257,3 +257,11 @@ smtp_send(
 message("완료: AI 응답 생성 → (PDF 있으면 첨부) → Gmail 발송 성공 | to=", to,
         " | pdf=", ifelse(pdf_exists, pdf_path, "NONE"))
 cat("메일 발송 정상 종료되었습니다.\n")
+
+
+# 배치파일로 실행될때는 강제 종료
+# 인터렉티브 모드(RStudio 등)가 아닐 때만 R 세션을 종료
+if (!interactive()) {
+  quit(save = "no")
+}
+
