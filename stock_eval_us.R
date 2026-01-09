@@ -24,9 +24,9 @@ today <- format(Sys.Date(), "%Y-%m-%d")
 # 로컬하드에 저장된 input_stock.csv 를 가져오는 경우
 full_path <- normalizePath(file.path(getwd(), "input_stock_us.csv"), winslash = "/", mustWork = FALSE)
 
-data_en <- read_csv(full_path, 
+data_en <- read_csv(full_path,
                     comment = "#",  # 맨앞이 #으로 시작하면 무시함
-                    locale = locale(encoding = "UTF-8"), 
+                    locale = locale(encoding = "UTF-8"),
                     show_col_types = FALSE)
 
 
@@ -52,17 +52,19 @@ for (i in 1:nrow(data_en)) {
   security[i] <- as.character(data_en$보유증권사[i])
   purchase_price <- data_en$매수가격[i]
   quantity <- data_en$수량[i]
-  
+
   # 현재 주식 가격 가져오기
   #getSymbols(symbol, src = "yahoo", from = Sys.Date(), to = Sys.Date())
   getSymbols(symbol, src = "yahoo", from = Sys.Date()-6, to = Sys.Date()) # 뉴욕과 시차때문에 from Date에서 며칠전 날짜로 설정해줌(오래동안 실행해본 경험에서 나왔음)
-  
+
   current_price[i] <- as.numeric(last(get(symbol)[,4])) # symbol 종목의 open, high, low, close 가격에서 4번째 위치한 종가를 가져온다.
-  
+
   amount[i] <- current_price[i] * quantity  # 종목별 평가액
-  
+
   # 수익금 계산
   profits[i] <- (current_price[i] - purchase_price) * quantity
+  
+  Sys.sleep(0.5) # 안정성을 위해 약간 delay
 }
 
 # 데이터 프레임에 수익금 추가
@@ -147,35 +149,35 @@ new_data_en
 
 # 아래 통계는 콘솔과 plots창에 표시됨
 # 증권사별 평가액
-new_data <- data %>% 
-  group_by(보유증권사) %>% 
-  summarize(sec_tot = sum(평가금)) %>% 
+new_data <- data %>%
+  group_by(보유증권사) %>%
+  summarize(sec_tot = sum(평가금)) %>%
   arrange(desc(sec_tot))
 new_data <- new_data %>% filter(!is.na(보유증권사))  # NA 제거
 new_data
-ggplot(data = new_data, aes(x = reorder(보유증권사, -sec_tot), y = sec_tot/1000000)) + 
+ggplot(data = new_data, aes(x = reorder(보유증권사, -sec_tot), y = sec_tot/1000000)) +
   labs(x = "증권사", y = "보유액합계(백만)") +
   #geom_text(aes(label=sec_tot/1000000/exchange_rate[-1]), vjust = -0.1) +
   geom_col()
 
 
 # 종목별 평가액
-new_data <- data %>% 
-  group_by(종목명) %>% 
-  summarize(종목평가합산 = sum(평가금), 합산수량 = sum(수량), 수익금합산 = sum(수익금)) %>% 
+new_data <- data %>%
+  group_by(종목명) %>%
+  summarize(종목평가합산 = sum(평가금), 합산수량 = sum(수량), 수익금합산 = sum(수익금)) %>%
   arrange(desc(종목평가합산))
 new_data <- new_data[-1,]    # 첫번째 행 제거
 new_data <- new_data[-1,]    # 첫번째 행 제거
 new_data$rate = new_data$종목평가합산 / sum(new_data$종목평가합산)
 #print(new_data, n=30)
 
-p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = 종목평가합산/1000000, fill=수익금합산/종목평가합산)) + 
+p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = 종목평가합산/1000000, fill=수익금합산/종목평가합산)) +
   scale_x_discrete(guide = guide_axis(angle = 30)) +
   #labs(x = "종목", y = "종목별 합계(백만원)") +
   geom_text(aes(label= round(종목평가합산/sum(종목평가합산), 2) ), vjust = -0.1) +
   geom_col() +
-  scale_fill_gradient2(low = "red", 
-                       high = "blue", 
+  scale_fill_gradient2(low = "red",
+                       high = "blue",
                        midpoint = 0) +
   labs(
     title = "미국 주식 종목별 평가금(단위:백만$, 그래프위 숫자는 비중)"
@@ -190,14 +192,14 @@ get_spx_quantmod <- function() {
   suppressWarnings(
     quantmod::getSymbols("^GSPC", src = "yahoo", auto.assign = FALSE)
   ) -> spx
-  
+
   # 종가 기준
   close_today <- as.numeric(Cl(spx)[NROW(spx)])
   close_prev  <- as.numeric(Cl(spx)[NROW(spx) - 1])
-  
+
   diff <- close_today - close_prev
   pct  <- round(diff / close_prev * 100, 2)
-  
+
   diff_label <- if (diff > 0) {
     paste0("+", round(diff, 2))
   } else if (diff < 0) {
@@ -205,7 +207,7 @@ get_spx_quantmod <- function() {
   } else {
     paste0("±0")
   }
-  
+
   list(
     spx_value = round(close_today, 2),
     spx_diff = round(diff, 2),

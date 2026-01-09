@@ -86,6 +86,8 @@ for (i in 1:nrow(data)) {
   
   amount[i] <- current_price[i] * quantity
   profits[i] <- (current_price[i] - purchase_price) * quantity
+  
+  Sys.sleep(0.5) # 안정성을 위해 약간 delay
 }
 
 data$종목명 <- tickername
