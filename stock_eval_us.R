@@ -1,9 +1,3 @@
-pkg = c("quantmod", "readxl", "writexl", "dplyr", "tidyverse", "rvest", "httr")
-new.pkg = pkg[!(pkg %in% installed.packages()[, "Package"])]
-if (length(new.pkg)) {
-  install.packages(new.pkg, dependencies = TRUE)
-}
-
 library(quantmod)
 library(writexl)
 library(dplyr)
