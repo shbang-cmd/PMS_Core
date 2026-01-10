@@ -259,6 +259,7 @@ make_gemini_prompt_pms <- function(
       6) 특이사항  
       - 금일 데이터에서 눈에 띄는 점이 있을 경우만 서술
       - 없으면 “특이사항 없음”으로 명시
+      - 아래의 Drift에도 간략히 요약
       
       7) 금일 시장 환경 한 줄 요약
       - 입력 데이터에 시장 지표가 없는 경우,
@@ -285,7 +286,8 @@ make_gemini_prompt_pms <- function(
       "=== [5] Warnings ===\n", warn_txt, "\n\n",
       "=== [6] Errors ===\n", err_txt, "\n\n",
       "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
-      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n")
+      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n",
+      "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n")
   }
 
 

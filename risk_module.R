@@ -905,12 +905,79 @@ run_var_cvar_from_file <- function(
 }
 
 ###############################################################################
-# 3) DRIFT 기반 동적 리밸런싱 신호
+# 3) DRIFT 기반 동적 리밸런싱 신호 : AI보고서를 위한 전역변수 추가
 ###############################################################################
+# run_drift_rebal_signal <- function(
+#     target_weights,
+#     current_weights,
+#     threshold = 0.05
+# ) {
+#   if (length(target_weights) != length(current_weights)) {
+#     stop("DRIFT: target_weights와 current_weights의 길이가 다릅니다.")
+#   }
+#   
+#   if (!is.null(names(target_weights)) && !is.null(names(current_weights))) {
+#     all_names <- union(names(target_weights), names(current_weights))
+#     target_weights  <- target_weights[all_names]
+#     current_weights <- current_weights[all_names]
+#   }
+#   
+#   target_weights[target_weights < 0]   <- 0
+#   current_weights[current_weights < 0] <- 0
+#   
+#   if (sum(target_weights) <= 0 || sum(current_weights) <= 0) {
+#     stop("DRIFT: 비중 합이 0 이하입니다.")
+#   }
+#   
+#   target_norm  <- target_weights / sum(target_weights)
+#   current_norm <- current_weights / sum(current_weights)
+#   
+#   diff <- current_norm - target_norm  # +: 목표보다 초과, -: 부족
+#   df <- data.frame(
+#     Asset          = names(target_norm),
+#     Target_Weight  = round(target_norm * 100, 2),
+#     Current_Weight = round(current_norm * 100, 2),
+#     Drift_pctpt    = round(diff * 100, 2)
+#   )
+#   
+#   cat("\n[리스크] DRIFT 기반 리밸런싱 신호\n")
+#   cat("========================================\n")
+#   cat(" (양수: 목표보다 비중 과다 → 매도 후보)\n")
+#   cat(" (음수: 목표보다 비중 부족 → 매수 후보)\n")
+#   cat("----------------------------------------\n")
+#   print(df, row.names = FALSE)
+#   cat("----------------------------------------\n")
+#   
+#   idx <- which(abs(diff) >= threshold)
+#   if (length(idx) == 0) {
+#     cat("※ 모든 자산의 드리프트가 ±", threshold * 100,
+#         "%p 이내입니다. 당장 리밸런싱 필요 신호는 없습니다.\n\n", sep = "")
+#     return(invisible(df))
+#   }
+#   
+#   cat("※ 리밸런싱 후보 (|Drift| >=", threshold * 100, "%p 이상):\n", sep = "")
+#   for (i in idx) {
+#     nm    <- names(diff)[i]
+#     d_val <- diff[i] * 100
+#     if (d_val > 0) {
+#       cat(" -", nm, ": 목표보다 약 +", sprintf("%.2f", d_val),
+#           "%p 초과 → 일부 매도하여 다른 자산으로 이동 고려\n")
+#     } else {
+#       cat(" -", nm, ": 목표보다 약 ", sprintf("%.2f", d_val),
+#           "%p 부족 → 여유 자금/타 자산 매도로 비중 확대 고려\n")
+#     }
+#   }
+#   cat("========================================\n\n")
+#   
+#   invisible(df)
+# }
+
 run_drift_rebal_signal <- function(
     target_weights,
     current_weights,
-    threshold = 0.05
+    threshold = 0.05,
+    opinion_var = "PMS_OPINION_DRIFT",
+    assign_env = .GlobalEnv
 ) {
   if (length(target_weights) != length(current_weights)) {
     stop("DRIFT: target_weights와 current_weights의 길이가 다릅니다.")
@@ -933,6 +1000,7 @@ run_drift_rebal_signal <- function(
   current_norm <- current_weights / sum(current_weights)
   
   diff <- current_norm - target_norm  # +: 목표보다 초과, -: 부족
+  
   df <- data.frame(
     Asset          = names(target_norm),
     Target_Weight  = round(target_norm * 100, 2),
@@ -940,6 +1008,7 @@ run_drift_rebal_signal <- function(
     Drift_pctpt    = round(diff * 100, 2)
   )
   
+  # ===== (1) 콘솔 출력은 기존처럼 유지 =====
   cat("\n[리스크] DRIFT 기반 리밸런싱 신호\n")
   cat("========================================\n")
   cat(" (양수: 목표보다 비중 과다 → 매도 후보)\n")
@@ -948,29 +1017,64 @@ run_drift_rebal_signal <- function(
   print(df, row.names = FALSE)
   cat("----------------------------------------\n")
   
+  # ===== (2) 메일용 '의견 문자열' 생성 =====
   idx <- which(abs(diff) >= threshold)
+  
+  opinion_lines <- character(0)
+  opinion_lines <- c(opinion_lines, "[DRIFT 리밸런싱 코멘트]")
+  opinion_lines <- c(opinion_lines, sprintf("- 기준: |Drift| >= %.2f%%p", threshold * 100))
+  
   if (length(idx) == 0) {
-    cat("※ 모든 자산의 드리프트가 ±", threshold * 100,
-        "%p 이내입니다. 당장 리밸런싱 필요 신호는 없습니다.\n\n", sep = "")
-    return(invisible(df))
+    msg <- sprintf("모든 자산의 드리프트가 ±%.2f%%p 이내로, 즉시 리밸런싱 신호는 없습니다.", threshold * 100)
+    opinion_lines <- c(opinion_lines, paste0("- 요약: ", msg))
+    
+    # 콘솔 안내(기존 메시지)
+    cat("※ ", msg, "\n\n", sep = "")
+    
+  } else {
+    opinion_lines <- c(opinion_lines, sprintf("- 리밸런싱 후보: %d개", length(idx)))
+    
+    for (i in idx) {
+      nm    <- names(diff)[i]
+      d_val <- diff[i] * 100
+      if (d_val > 0) {
+        opinion_lines <- c(
+          opinion_lines,
+          sprintf("  • %s: 목표 대비 +%.2f%%p 초과(과다) → 일부 매도/이동 고려", nm, d_val)
+        )
+      } else {
+        opinion_lines <- c(
+          opinion_lines,
+          sprintf("  • %s: 목표 대비 %.2f%%p 부족(과소) → 비중 확대 고려", nm, d_val)
+        )
+      }
+    }
+    
+    # 콘솔 안내(기존 메시지)
+    cat("※ 리밸런싱 후보 (|Drift| >=", threshold * 100, "%p 이상):\n", sep = "")
+    for (i in idx) {
+      nm    <- names(diff)[i]
+      d_val <- diff[i] * 100
+      if (d_val > 0) {
+        cat(" -", nm, ": 목표보다 약 +", sprintf("%.2f", d_val),
+            "%p 초과 → 일부 매도하여 다른 자산으로 이동 고려\n")
+      } else {
+        cat(" -", nm, ": 목표보다 약 ", sprintf("%.2f", d_val),
+            "%p 부족 → 여유 자금/타 자산 매도로 비중 확대 고려\n")
+      }
+    }
+    cat("========================================\n\n")
   }
   
-  cat("※ 리밸런싱 후보 (|Drift| >=", threshold * 100, "%p 이상):\n", sep = "")
-  for (i in idx) {
-    nm    <- names(diff)[i]
-    d_val <- diff[i] * 100
-    if (d_val > 0) {
-      cat(" -", nm, ": 목표보다 약 +", sprintf("%.2f", d_val),
-          "%p 초과 → 일부 매도하여 다른 자산으로 이동 고려\n")
-    } else {
-      cat(" -", nm, ": 목표보다 약 ", sprintf("%.2f", d_val),
-          "%p 부족 → 여유 자금/타 자산 매도로 비중 확대 고려\n")
-    }
-  }
-  cat("========================================\n\n")
+  opinion_text <- paste(opinion_lines, collapse = "\n")
+  
+  # ===== (3) 전역변수에 저장 =====
+  assign(opinion_var, opinion_text, envir = assign_env)
   
   invisible(df)
 }
+
+
 
 # ============================================================
 #  GARCH 기반 변동성 위험 경보(Alert) 시스템
