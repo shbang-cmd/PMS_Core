@@ -459,9 +459,13 @@ repeat {
           cat("\n[리스크] 오늘 기준 몬테카/미래MDD/인출 시뮬레이션...\n")
           suppressWarnings(try(run_mc_from_dd(dd, years=10, monthly_contrib=5000000, n_sims=5000), silent=TRUE))
           suppressWarnings(try(run_future_mdd_from_dd(dd, years=10, monthly_contrib=5000000, n_sims=2000), silent=TRUE))
-          suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=200000000,
-                                                       n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
-          
+          #suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=200000000,
+          suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=78000000,  # 연 78백만원(월 650만원) 인출 가정
+          n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
+          # 연 인출액 7,800만원은
+          # 국민연금을 제외한 월 450만 원의 실질 소비를
+          # 물가상승률 2.5%를 반영해 30년 평균 명목 기준으로 환산한 값
+ 
           if (file.exists("factors_monthly.csv") && file.exists("asset_returns_monthly.csv")) {
             cat("[리스크] 팩터 회귀 실행...\n")
             suppressWarnings(try(run_factor_model_from_files("asset_returns_monthly.csv","factors_monthly.csv",weights), silent=TRUE))
