@@ -259,6 +259,7 @@ make_gemini_prompt_pms <- function(
       6) 특이사항  
       - 금일 데이터에서 눈에 띄는 점이 있을 경우만 서술
       - 없으면 “특이사항 없음”으로 명시
+      - 아래의 Drift에도 간략히 요약
       
       7) 금일 시장 환경 한 줄 요약
       - 입력 데이터에 시장 지표가 없는 경우,
@@ -285,7 +286,8 @@ make_gemini_prompt_pms <- function(
       "=== [5] Warnings ===\n", warn_txt, "\n\n",
       "=== [6] Errors ===\n", err_txt, "\n\n",
       "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
-      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n")
+      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n",
+      "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n")
   }
 
 
@@ -457,9 +459,13 @@ repeat {
           cat("\n[리스크] 오늘 기준 몬테카/미래MDD/인출 시뮬레이션...\n")
           suppressWarnings(try(run_mc_from_dd(dd, years=10, monthly_contrib=5000000, n_sims=5000), silent=TRUE))
           suppressWarnings(try(run_future_mdd_from_dd(dd, years=10, monthly_contrib=5000000, n_sims=2000), silent=TRUE))
-          suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=200000000,
-                                                       n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
-          
+          #suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=200000000,
+          suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=78000000,  # 연 78백만원(월 650만원) 인출 가정
+          n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
+          # 연 인출액 7,800만원은
+          # 국민연금을 제외한 월 450만 원의 실질 소비를
+          # 물가상승률 2.5%를 반영해 30년 평균 명목 기준으로 환산한 값
+ 
           if (file.exists("factors_monthly.csv") && file.exists("asset_returns_monthly.csv")) {
             cat("[리스크] 팩터 회귀 실행...\n")
             suppressWarnings(try(run_factor_model_from_files("asset_returns_monthly.csv","factors_monthly.csv",weights), silent=TRUE))
