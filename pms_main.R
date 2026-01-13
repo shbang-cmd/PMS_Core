@@ -378,11 +378,13 @@ repeat {
                                                    Sum = col_double(),
                                                    Profit = col_double()),
                                   show_col_types = FALSE)
+
+        # # existing_data의 마지막행이 공백행이면 제거
+        # existing_data <- existing_data %>%
+        #   dplyr::filter(!is.na(Date))
+
         
-        # existing_data의 마지막행이 공백행이면 제거
-        existing_data <- existing_data %>% 
-          dplyr::filter(!is.na(Date))
-        
+        # 마지막행이 오늘이라면 그 행 삭제
         if (nrow(existing_data) > 0 && tail(existing_data$Date, 1) == Sys.Date()) {
           existing_data <- existing_data[-nrow(existing_data), ]
         }
@@ -391,7 +393,36 @@ repeat {
       } else {
         updated_data <- result
       }
+
+      # 
+      # # output_sum.csv 갱신
+      # if (file.exists(output_file)) {
+      #   existing_data <- readr::read_csv(
+      #     output_file,
+      #     col_types = readr::cols(
+      #       Date   = readr::col_date(format = ""),
+      #       Sum    = readr::col_double(),
+      #       Profit = readr::col_double()
+      #     ),
+      #     show_col_types = FALSE
+      #   )
+      #   
+      #   # 공백/깨진 행 제거
+      #   existing_data <- existing_data %>% dplyr::filter(!is.na(Date))
+      #   
+      #   # 오늘 날짜는 기존에 몇 줄이 있든 "전부" 제거
+      #   existing_data <- existing_data %>% dplyr::filter(Date != Sys.Date())
+      #   
+      #   # 오늘 결과 1줄 추가 + 정렬
+      #   updated_data <- dplyr::bind_rows(existing_data, result) %>%
+      #     dplyr::arrange(Date)
+      #   
+      # } else {
+      #   updated_data <- result
+      # }
+      # 
       
+            
       write_csv(updated_data, output_file)
       
       is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
