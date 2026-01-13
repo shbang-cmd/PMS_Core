@@ -10,7 +10,7 @@ library(ggplot2)
 library(scales)
 
 # 분석 기간 텍스트
-period_txt <- "(2020 - 2025)"
+period_txt <- "(2011 - 2025)"
 
 # ==========================================
 # 1. Long 변환
