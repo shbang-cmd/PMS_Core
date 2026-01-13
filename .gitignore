@@ -6,5 +6,4 @@ log/
 reports/
 *.xlsx
 *.XLSX
-asset_returns_monthly.csv
-factors_monthly.csv
+*.csv
