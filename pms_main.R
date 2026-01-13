@@ -122,7 +122,7 @@ make_gemini_prompt_pms <- function(
     take_last_n_days = 2,
     benchmark_name = "SPY",
     benchmark_ret  = NA_real_,
-    # ✅ 딱 두 개만 받음
+    # 딱 두 개만 받음
     cvar_amt = NA_real_,   # CVaR (원)
     pa_mdd   = NA_real_    # MDD (비율, 음수)
 ) {
@@ -378,14 +378,51 @@ repeat {
                                                    Sum = col_double(),
                                                    Profit = col_double()),
                                   show_col_types = FALSE)
+
+        # # existing_data의 마지막행이 공백행이면 제거
+        # existing_data <- existing_data %>%
+        #   dplyr::filter(!is.na(Date))
+
+        
+        # 마지막행이 오늘이라면 그 행 삭제
         if (nrow(existing_data) > 0 && tail(existing_data$Date, 1) == Sys.Date()) {
           existing_data <- existing_data[-nrow(existing_data), ]
         }
+
         updated_data <- bind_rows(existing_data, result)
       } else {
         updated_data <- result
       }
+
+      # 
+      # # output_sum.csv 갱신
+      # if (file.exists(output_file)) {
+      #   existing_data <- readr::read_csv(
+      #     output_file,
+      #     col_types = readr::cols(
+      #       Date   = readr::col_date(format = ""),
+      #       Sum    = readr::col_double(),
+      #       Profit = readr::col_double()
+      #     ),
+      #     show_col_types = FALSE
+      #   )
+      #   
+      #   # 공백/깨진 행 제거
+      #   existing_data <- existing_data %>% dplyr::filter(!is.na(Date))
+      #   
+      #   # 오늘 날짜는 기존에 몇 줄이 있든 "전부" 제거
+      #   existing_data <- existing_data %>% dplyr::filter(Date != Sys.Date())
+      #   
+      #   # 오늘 결과 1줄 추가 + 정렬
+      #   updated_data <- dplyr::bind_rows(existing_data, result) %>%
+      #     dplyr::arrange(Date)
+      #   
+      # } else {
+      #   updated_data <- result
+      # }
+      # 
       
+            
       write_csv(updated_data, output_file)
       
       is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
@@ -732,9 +769,9 @@ repeat {
         if (is.null(names(weights)) || any(names(weights) == "")) {
           if (length(weights) == length(need_nm)) {
             names(weights) <- need_nm
-            cat("[방탄] weights 이름 자동 부여 완료\n")
+            cat("weights 이름 자동 부여 완료\n")
           } else {
-            cat("[방탄] weights 오류 → 리스크 분석 스킵\n")
+            cat("weights 오류 → 리스크 분석 스킵\n")
             goto_sleep <- TRUE
           }
         }
@@ -743,7 +780,7 @@ repeat {
           
           if (abs(sum(weights, na.rm = TRUE) - 1) > 1e-6) {
             weights <- weights / sum(weights, na.rm = TRUE)
-            cat("[방탄] weights 정규화 완료 (합=1)\n")
+            cat("weights 정규화 완료 (합=1)\n")
           }
           
           current_nav <- tail(dd$Sum, 1)
@@ -1219,7 +1256,7 @@ if (!interactive()) {
 # 팩터 회귀 / PCA로 “무슨 위험으로 벌었나” 분해
 # 이 조합 자체가 상용 솔루션들이 강조하는 “리스크+성과+어트리뷰션(원인분해)” 방향과 일치
 # 
-# 자산운용사 대비 이 프로그램에 없는 것(각종 규제로 인해 필수적으로 갖추어야 하는 것들) :
+# 자산운용사 대비 이 프로그램에 없는 것(각종 규제로 인해 자산운용사가 필수적으로 갖추어야 하는 것들) :
 # 주문/체결/사후감시(컴플라이언스)
 # 투자한도, 금지종목, 이해상충, pre-trade / post-trade 룰
 # 회계/NAV 공정성 + 리컨실리에이션(같은 자산을 서로 다른 장부(내부 vs 외부)가 같은 숫자로 보고 있는지 맞춰보는 작업)
