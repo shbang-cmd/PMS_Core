@@ -378,9 +378,15 @@ repeat {
                                                    Sum = col_double(),
                                                    Profit = col_double()),
                                   show_col_types = FALSE)
+        
+        # existing_data의 마지막행이 공백행이면 제거
+        existing_data <- existing_data %>% 
+          dplyr::filter(!is.na(Date))
+        
         if (nrow(existing_data) > 0 && tail(existing_data$Date, 1) == Sys.Date()) {
           existing_data <- existing_data[-nrow(existing_data), ]
         }
+
         updated_data <- bind_rows(existing_data, result)
       } else {
         updated_data <- result
