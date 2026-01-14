@@ -936,19 +936,28 @@ Gmail 계정 1개
 2. PMS 폴더 구조(권장)
 https://github.com/shbang-cmd/PMS_Core 에서 아래 R코드를 복사해 놓습니다.
 설치 후 폴더는 대략 이런 모습이 가장 안정적입니다.
+
 C:\PMS_Core
+
 ├─ main_loop.R               (메인 스크립트)
+
 ├─ stock_eval.R
+
 ├─ stock_eval_us.R
+
 ├─ risk_module.R
+
 ├─ input_stock.csv
+
 ├─ input_stock_us.csv
+
 ├─ output_sum.csv            (자동 생성/갱신)
+
 ├─ asset_returns_monthly.csv (리스크 분석용)
+
 ├─ factors_monthly.csv       (리스크 분석용)
-└─ reports\
-   ├─ Daily_Risk_YYYYMMDD.pdf
-   └─ gemini_prompt.txt
+
+└─ reports\Daily_Risk_YYYYMMDD.pdf, gemini_prompt.txt
 
 
 3. 첫 실행 전 “딱 한 번만” 해야 하는 설정
