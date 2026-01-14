@@ -368,27 +368,6 @@ ETF로 투자하기로 했으면 어떤 ETF로 할지 정하면 된다. 필자�
 |-----:|-----:|-----:|-----:|-----:|-----:|-----:    | -----:|
 | 36%  | 20%  |  15% | 10%  | 10%  |  5%  |    4%    | 100%  |
 
-직관적으로 파이차트로 보여주면 다음과 같다.
-
-```mermaid
-pie title Portfolio Allocation
-  "SPY 36%" : 36
-  "SCHD 20%" : 20
-  "QQQ 15%" : 15
-  "TQQQ 10%" : 10
-  "GLD 10%" : 10
-  "IEF 5%" : 5
-  "BIL(현금) 4%" : 4
-```
-
-```mermaid
-xychart-beta
-  title "김부장 포트폴리오 vs SPY ETF"
-  x-axis ["연수익률(%)","변동성(%)","MDD(%)","Sharpe"]
-  y-axis "값" -30 --> 20
-  bar "김부장" [18.3, 16.3, -26.0, 0.99]
-  bar "SPY"   [14.9, 15.1, -23.9, 0.85]
-```
 
 
 portfoliovisualizer.com에서는 위의 김부장 포트폴리오와 100% SPY ETF의 수익률 및 변동성 등의 비교를 아래와 같이 답변해준다. 기준은 2026년 초를 기준으로 최근 약 170개월을 기준으로 백테스트를 하였다. 약 170여개월을 가정한 이유는 위의 ETF중에서 최근에 출시한 SCHD가 2011년 말에 출시했는데 2026년 초 기준으로 SCHD ETF 출시 이후 약 170여개월이 흘렀기 때문이다. 위에서 '현금'은 종목으로서의 현금을 의미하는데 그냥 두면 이자를 안주므로 금리 상승 또는 하락 발표에 거의 영향을 안받는 BIL 또는 SGOV ETF를 현금으로 가정하였다. 표본수를 늘린다고 그 전의 기간까지 산정하면 없는 역사를 가지고 만드는 인위적인 데이터를 사용하여야 해서 찜찜하고, 약 170개 표본수 정도면 어느 정도 충분한 기간으로 생각하고 가정했기 때문이기도 하다. 독자여러분이 시뮬레이션 실행한다면 ETF 가격이 변동하기 때문에 당연히 실행시점에 따라 약간 다르게 나올 수 있다.
@@ -631,12 +610,6 @@ Return_TWR/NAV는 불필요한 판단을 줄여 규칙을 지속하게 만들고
 
 ---
 ### Chapter 19. 현금 관리까지 시스템화하기
-
-6개월 생활비 분리
-
-투자금과 비상금의 분리
-
-현금도 자산이다
 
 
 6개월 생활비 분리 — 투자금과 비상금의 분리 — 현금도 자산이다
@@ -945,6 +918,25 @@ C:\PMS_Core
      ├─ Daily_Risk_YYYYMMDD.pdf
 	 
      └─ gemini_prompt.txt
+
+```mermaid
+flowchart TB
+  ROOT["C:/PMS_Core"] --> M["main_loop.R<br/>메인 스크립트"]
+  ROOT --> S1["stock_eval.R<br/>국내 주식 평가"]
+  ROOT --> S2["stock_eval_us.R<br/>미국 주식 평가"]
+  ROOT --> R1["risk_module.R<br/>리스크 분석 모듈"]
+
+  ROOT --> I1["input_stock.csv<br/>입력: 국내 종목"]
+  ROOT --> I2["input_stock_us.csv<br/>입력: 미국 종목"]
+
+  ROOT --> O1["output_sum.csv<br/>자동 생성/갱신"]
+  ROOT --> O2["asset_returns_monthly.csv<br/>리스크 분석용"]
+  ROOT --> O3["factors_monthly.csv<br/>리스크 분석용"]
+
+  ROOT --> REP["reports/"]
+  REP --> P1["Daily_Risk_YYYYMMDD.pdf<br/>일일 리스크 리포트"]
+  REP --> P2["gemini_prompt.txt<br/>AI 프롬프트"]
+```
 
 3. 첫 실행 전 “딱 한 번만” 해야 하는 설정
 3-1) 작업 디렉토리 확인
