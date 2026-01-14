@@ -380,32 +380,6 @@ portfoliovisualizer.com에서는 위의 김부장 포트폴리오와 100% SPY ET
 | MDD | -26.0% | -23.9% |
 | Sharpe 비율 | 0.99 | 0.85 |
 
-비교표를 그래프로 표현해 봤다.
-
-```mermaid
-flowchart TB
-  subgraph A["김부장 포트폴리오"]
-    A1["연수익률: 18.3%"]
-    A2["변동성: 16.3%"]
-    A3["MDD: -26.0%"]
-    A4["Sharpe: 0.99"]
-  end
-
-  subgraph B["SPY ETF"]
-    B1["연수익률: 14.9%"]
-    B2["변동성: 15.1%"]
-    B3["MDD: -23.9%"]
-    B4["Sharpe: 0.85"]
-  end
-
-  A1 --- B1
-  A2 --- B2
-  A3 --- B3
-  A4 --- B4
-```
-
-
-
 위에서 Sharpe비율은 연수익률을 변동성으로 나눈 것이다. 정확히는 연수익률에서 무위험이자율을 빼야 하지만 무위험이자율은 0으로 가정하였다. 변동성(위험) 대비 얼마나 수익을 얻는지에 대한 비율로 일종의 가성비 지표라고 볼 수 있다. 어쨌든 SPY ETF보다 약간의 변동성과 MDD를 희생하니 연수익률이 더 높았기 때문에 Sharpe 비율이 SPY ETF 단독 투자보다 더 높게 나왔다. 연수익률 나누기 변동성의 정확한 수치가 위 표에서는 정확히 Sharpe지수와 일치하지 않는데 아무래도 portfoliovisualizer 내부적인 로직이 따로 있는 것 같다. 어쨌든 김부장 포트폴리오가 SPY보다 Sharpe비율이 더 높다. 어느 방법을 선택하든 중요한 것은 Sharpe비율보다 얼마나 오랫동안 일관되게 투자를 할 수 있는지 실행력이 될 것이다.
 
 위의 분산투자의 사례가 마코위츠의 효율적 프론티어에 비추어 어디에 해당하는지 한 번 알아보자.  https://github.com/shbang-cmd/PMS_Core/blob/master/pf_efficient_frontier_simul.R 소스를 실행시켜 보면 아래와 같은 그래프가 나온다.(현금을 종목으로 넣을 수 없어서 현금비중 4%를 SPY에 넣어서 SPY 40%로 가정했다) 위의 "김부장"포트폴리오는 효율적 프론티어의 접선에 있지는 않지만 거의 가까운 것을 볼 수 있다. 검은 네모가 현재 김부장 포트폴리오이고 Sharpe비율이 최대인 최적의 해는 빨간색 세모로 나타내어 진다. Sharpe비율이 최적의 해에 비해서 0.048정도의 아주 작은 차이만 보이는 것을 알 수 있다. 그래프에서 보면 알겠지만 Max. Sharpe 지점에 비해 변동성과 수익성이 약간씩 올라간 것을 알 수 있다. 즉 최적의 해에 비해 변동성을 약간 희생해서 약간의 수익률을 더 올리는 전략이라고 볼 수 있다.
@@ -921,21 +895,24 @@ C:\PMS_Core
 
 ```mermaid
 flowchart TB
-  ROOT["C:/PMS_Core"] --> M["main_loop.R<br/>메인 스크립트"]
-  ROOT --> S1["stock_eval.R<br/>국내 주식 평가"]
-  ROOT --> S2["stock_eval_us.R<br/>미국 주식 평가"]
-  ROOT --> R1["risk_module.R<br/>리스크 분석 모듈"]
+  ROOT["C:/PMS_Core"] --> FILES["(files)"]
+  ROOT --> REPORTS["reports/"]
 
-  ROOT --> I1["input_stock.csv<br/>입력: 국내 종목"]
-  ROOT --> I2["input_stock_us.csv<br/>입력: 미국 종목"]
+  FILES --> F1["main_loop.R<br/>메인 스크립트"]
+  FILES --> F2["stock_eval.R<br/>국내 주식 평가"]
+  FILES --> F3["stock_eval_us.R<br/>미국 주식 평가"]
+  FILES --> F4["risk_module.R<br/>리스크 분석 모듈"]
 
-  ROOT --> O1["output_sum.csv<br/>자동 생성/갱신"]
-  ROOT --> O2["asset_returns_monthly.csv<br/>리스크 분석용"]
-  ROOT --> O3["factors_monthly.csv<br/>리스크 분석용"]
+  FILES --> F5["input_stock.csv<br/>입력: 국내 종목"]
+  FILES --> F6["input_stock_us.csv<br/>입력: 미국 종목"]
 
-  ROOT --> REP["reports/"]
-  REP --> P1["Daily_Risk_YYYYMMDD.pdf<br/>일일 리스크 리포트"]
-  REP --> P2["gemini_prompt.txt<br/>AI 프롬프트"]
+  FILES --> F7["output_sum.csv<br/>자동 생성/갱신"]
+  FILES --> F8["asset_returns_monthly.csv<br/>리스크 분석용"]
+  FILES --> F9["factors_monthly.csv<br/>리스크 분석용"]
+
+  REPORTS --> R1["Daily_Risk_YYYYMMDD.pdf<br/>일일 리스크 리포트"]
+  REPORTS --> R2["gemini_prompt.txt<br/>AI 프롬프트"]
+
 ```
 
 3. 첫 실행 전 “딱 한 번만” 해야 하는 설정
