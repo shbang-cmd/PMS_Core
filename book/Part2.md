@@ -864,52 +864,22 @@ Gmail 계정 1개
 제미나이 AI 호출용 API 키
 
 2. PMS 폴더 구조(권장)
-https://github.com/shbang-cmd/PMS_Core 에서 아래 R코드를 복사해 놓는다.
+https://github.com/shbang-cmd/PMS_Core 에서 아래 R코드를 복사해 놓습니다.
 설치 후 폴더는 대략 이런 모습이 가장 안정적입니다.
-
 C:\PMS_Core
+├─ main_loop.R               (메인 스크립트)
+├─ stock_eval.R
+├─ stock_eval_us.R
+├─ risk_module.R
+├─ input_stock.csv
+├─ input_stock_us.csv
+├─ output_sum.csv            (자동 생성/갱신)
+├─ asset_returns_monthly.csv (리스크 분석용)
+├─ factors_monthly.csv       (리스크 분석용)
+└─ reports\
+   ├─ Daily_Risk_YYYYMMDD.pdf
+   └─ gemini_prompt.txt
 
- ├─ main_loop.R   (메인 스크립트)
- 
- ├─ stock_eval.R
- 
- ├─ stock_eval_us.R
- 
- ├─ risk_module.R
- 
- ├─ input_stock.csv
- 
- ├─ input_stock_us.csv
- 
- ├─ output_sum.csv               (자동 생성/갱신)
- 
- ├─ asset_returns_monthly.csv    (리스크 분석용)
- 
- ├─ factors_monthly.csv          (리스크 분석용)
- 
- └─ reports\
- 
-     ├─ Daily_Risk_YYYYMMDD.pdf
-	 
-     └─ gemini_prompt.txt
-
-```mermaid
-flowchart TB
-  ROOT["C:/PMS_Core"]
-  ROOT --> F1["main_loop.R<br/>메인 스크립트"]
-  F1 --> F2["stock_eval.R"]
-  F2 --> F3["stock_eval_us.R"]
-  F3 --> F4["risk_module.R<br/>리스크 분석 모듈"]
-  F4 --> F5["input_stock.csv<br/>입력: 국내"]
-  F5 --> F6["input_stock_us.csv<br/>입력: 미국"]
-  F6 --> F7["output_sum.csv<br/>자동 생성/갱신"]
-  F7 --> F8["asset_returns_monthly.csv<br/>리스크 분석용"]
-  F8 --> F9["factors_monthly.csv<br/>리스크 분석용"]
-  F9 --> REP["reports/"]
-  REP --> R1["Daily_Risk_YYYYMMDD.pdf"]
-  R1 --> R2["gemini_prompt.txt"]
-
-```
 
 3. 첫 실행 전 “딱 한 번만” 해야 하는 설정
 3-1) 작업 디렉토리 확인
