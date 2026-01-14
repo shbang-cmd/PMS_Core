@@ -913,6 +913,7 @@ flowchart TB
   REPORTS --> R1["Daily_Risk_YYYYMMDD.pdf<br/>일일 리스크 리포트"]
   REPORTS --> R2["gemini_prompt.txt<br/>AI 프롬프트"]
 
+
 ```
 
 3. 첫 실행 전 “딱 한 번만” 해야 하는 설정
