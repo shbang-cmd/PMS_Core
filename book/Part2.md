@@ -225,48 +225,43 @@ PMS 시스템의 메인 모듈인 pms_main.R 프로그램의 입출력 파일은
 
 ```mermaid
 flowchart TB
-  %% =========================
-  %% PMS High-level Architecture
-  %% =========================
-
   subgraph U[사용자]
-    U1[설정/규칙 수정\n(ETF 비중, 리스크오프 조건 등)]
-    U2[리포트 확인\n(PDF/메일/로그)]
+    U1[설정/규칙 수정<br/>ETF 비중, 리스크오프 조건]
+    U2[리포트 확인<br/>PDF/메일/로그]
   end
 
   subgraph S[스케줄러]
-    S1[Windows 작업 스케줄러\n또는 cron/launchd]
+    S1[작업 스케줄러<br/>Windows Task Scheduler / cron / launchd]
   end
 
   subgraph P[로컬 실행 환경]
-    R1[PMS 메인 스크립트\n(pms_main.R)]
-    R2[보조 스크립트\n(유틸/함수/설정 로더)]
-    L1[로그\n(pms_main.log)]
+    R1[PMS 메인 실행<br/>pms_main.R]
+    R2[보조 모듈/함수<br/>utils / config 로더]
+    L1[로그 파일<br/>pms_main.log]
   end
 
   subgraph D[데이터 소스]
-    D1[시장 데이터\n(가격/환율/지표)]
-    D2[브로커/계좌 데이터\n(보유/평가/입출금)]
-    D3[휴장/거래일 캘린더\n(개장 여부)]
+    D1[시장 데이터<br/>가격/환율/지표]
+    D2[계좌/포지션 데이터<br/>보유/평가/입출금]
+    D3[거래일/휴장 정보<br/>개장 여부 판단]
   end
 
-  subgraph O[산출물(Output)]
-    O1[정리된 테이블\n(output_sum.csv 등)]
-    O2[수익률/요인 데이터\n(asset_returns_monthly.csv,\nfactors_monthly.csv)]
-    O3[리포트\n(Rplots.pdf 또는 Daily Risk PDF)]
-    O4[운용 코멘트 텍스트\n(AI 코멘트 or 수기)]
+  subgraph O[산출물 Output]
+    O1[요약 테이블<br/>output_sum.csv]
+    O2[월간 데이터<br/>asset_returns_monthly.csv<br/>factors_monthly.csv]
+    O3[리포트 PDF<br/>Rplots.pdf 또는 Daily Risk PDF]
+    O4[운용 코멘트 텍스트<br/>AI 코멘트 또는 템플릿]
   end
 
-  subgraph V[버전관리/배포]
-    G1[Git 로컬 저장소]
+  subgraph V[버전관리]
+    G1[로컬 Git 저장소]
     G2[GitHub 원격 저장소]
   end
 
   subgraph N[알림]
-    M1[이메일 발송\n(첨부: PDF / 본문: 요약)]
+    M1[이메일 발송<br/>PDF 첨부 + 요약]
   end
 
-  %% ---- flows ----
   U1 --> S1
   S1 --> R1
 
@@ -289,6 +284,7 @@ flowchart TB
   U2 --> M1
   U2 --> O3
   U2 --> L1
+
 ```
 
 ---
