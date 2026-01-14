@@ -733,30 +733,57 @@ AI에게 맡길 것과 맡기지 말 것 — 일일 리포트 자동 해석, 그
 
 ```mermaid
 flowchart TB
+  subgraph SCH["Windows 작업 스케줄러"]
+    S1["매일 16:00 트리거"]
+    S2["Rscript 실행<br/>main_loop.R 호출"]
+    S1 --> S2
+  end
+
+  subgraph ENV["보안: 환경 변수(로컬 PC)"]
+    K1["GEMINI_API_KEY"]
+    K2["GMAIL_USER"]
+    K3["GMAIL_APP_PASSWORD"]
+  end
+
   subgraph PMS["C:/PMS_Core (PMS)"]
-    A["main_loop.R<br/>일일 실행"]
+    A["main_loop.R<br/>일일 배치 실행"]
     B["reports/gemini_prompt.txt<br/>프롬프트 출력"]
     C["reports/Daily_Risk_YYYYMMDD.pdf<br/>리포트 PDF 생성"]
+    D["output_sum.csv 등<br/>요약/데이터 갱신"]
+    A --> D
     A --> B
     A --> C
   end
 
   subgraph AI["Gemini 생성형 AI"]
-    D["프롬프트 입력<br/>(gemini_prompt.txt)"]
-    E["응답 생성<br/>오늘 포트폴리오 분석 + 시황 코멘트"]
-    D --> E
+    E["프롬프트 입력<br/>gemini_prompt.txt"]
+    F["응답 생성<br/>포트폴리오 분석 + 시황 코멘트"]
+    E --> F
   end
 
-  subgraph MAIL["R 메일 발송 (blastula)"]
-    F["blastula::compose_email<br/>HTML 본문 생성"]
-    G["첨부 추가<br/>Daily_Risk_YYYYMMDD.pdf"]
-    H["smtp_send()<br/>사용자에게 메일 발송"]
-    F --> G --> H
+  subgraph MAIL["R 메일 발송 (blastula + Gmail SMTP)"]
+    G["blastula::compose_email<br/>메일 본문(HTML) 구성"]
+    H["PDF 첨부<br/>Daily_Risk_YYYYMMDD.pdf"]
+    I["smtp_send()<br/>Gmail SMTP로 발송"]
+    G --> H --> I
   end
 
-  B --> D
-  E --> F
-  C --> G
+  %% 실행 흐름
+  S2 --> A
+
+  %% 환경변수 로드 (보안)
+  ENV --> A
+
+  %% Gemini 호출 (키 필요)
+  K1 --> AI
+  B --> E
+  F --> G
+
+  %% Gmail 발송 (계정/앱비번 필요)
+  K2 --> MAIL
+  K3 --> MAIL
+  C --> H
+
 ```
 
 ---
