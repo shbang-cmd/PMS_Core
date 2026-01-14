@@ -895,24 +895,19 @@ C:\PMS_Core
 
 ```mermaid
 flowchart TB
-  ROOT["C:/PMS_Core"] --> FILES["(files)"]
-  ROOT --> REPORTS["reports/"]
-
-  FILES --> F1["main_loop.R<br/>메인 스크립트"]
-  FILES --> F2["stock_eval.R<br/>국내 주식 평가"]
-  FILES --> F3["stock_eval_us.R<br/>미국 주식 평가"]
-  FILES --> F4["risk_module.R<br/>리스크 분석 모듈"]
-
-  FILES --> F5["input_stock.csv<br/>입력: 국내 종목"]
-  FILES --> F6["input_stock_us.csv<br/>입력: 미국 종목"]
-
-  FILES --> F7["output_sum.csv<br/>자동 생성/갱신"]
-  FILES --> F8["asset_returns_monthly.csv<br/>리스크 분석용"]
-  FILES --> F9["factors_monthly.csv<br/>리스크 분석용"]
-
-  REPORTS --> R1["Daily_Risk_YYYYMMDD.pdf<br/>일일 리스크 리포트"]
-  REPORTS --> R2["gemini_prompt.txt<br/>AI 프롬프트"]
-
+  ROOT["C:/PMS_Core"]
+  ROOT --> F1["main_loop.R<br/>메인 스크립트"]
+  F1 --> F2["stock_eval.R"]
+  F2 --> F3["stock_eval_us.R"]
+  F3 --> F4["risk_module.R<br/>리스크 분석 모듈"]
+  F4 --> F5["input_stock.csv<br/>입력: 국내"]
+  F5 --> F6["input_stock_us.csv<br/>입력: 미국"]
+  F6 --> F7["output_sum.csv<br/>자동 생성/갱신"]
+  F7 --> F8["asset_returns_monthly.csv<br/>리스크 분석용"]
+  F8 --> F9["factors_monthly.csv<br/>리스크 분석용"]
+  F9 --> REP["reports/"]
+  REP --> R1["Daily_Risk_YYYYMMDD.pdf"]
+  R1 --> R2["gemini_prompt.txt"]
 
 ```
 
