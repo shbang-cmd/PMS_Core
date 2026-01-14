@@ -120,6 +120,10 @@ if (!file.exists(prompt_path)) stop("프롬프트 파일이 없습니다: ", pro
 
 prompt_text <- readLines(prompt_path, encoding = "UTF-8")
 prompt_text <- paste(prompt_text, collapse = "\n")
+
+
+
+
 if (!nzchar(prompt_text)) stop("프롬프트 내용이 비어 있습니다.")
 
 # ------------------------------------------------------------
