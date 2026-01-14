@@ -221,6 +221,75 @@ PMS 시스템의 메인 모듈인 pms_main.R 프로그램의 입출력 파일은
 		 
 위의 출력파일중에서 Daily_Risk_{YYYYMMDD}.pdf를 메인모듈에서 작성하는데 제미나이 생성형 AI가 프롬프트 엔지니어링(Prompt Engineering)을 통해 이메일 내용을 작성해서 첨부로 매일 사용자에게 자동으로 보내준다. {YYYYMMDD}은 오늘기준 연월일(예를 들어 20260112)의 숫자이다. 이메일을 자동으로 보내준다고? 그게 가능한가? 가능하다. R에 보면 blastula 라이브러리가 있는데 그것을 이용하면 된다. 집에 남는 노트북에서 윈도우 "작업 스케줄러"에 등록하면 매일 장종료후 알아서 이메일을 보내준다. 너무 딱딱하지 않게 매일 주식관련 농담까지도 하나씩 추가해서 보내준다. 인공지능이 시황을 분석해 메일을 작성해준다고? 어떻게 그게 가능한가? 어떻게 이런 시스템이 가능한지 하나하나씩 천천히 따라오길 바란다.
 
+백문이 불여일견이다. 아래 그림을 보면 직관적 이해가 된다.
+
+```mermaid
+flowchart TB
+  %% =========================
+  %% PMS High-level Architecture
+  %% =========================
+
+  subgraph U[사용자]
+    U1[설정/규칙 수정\n(ETF 비중, 리스크오프 조건 등)]
+    U2[리포트 확인\n(PDF/메일/로그)]
+  end
+
+  subgraph S[스케줄러]
+    S1[Windows 작업 스케줄러\n또는 cron/launchd]
+  end
+
+  subgraph P[로컬 실행 환경]
+    R1[PMS 메인 스크립트\n(pms_main.R)]
+    R2[보조 스크립트\n(유틸/함수/설정 로더)]
+    L1[로그\n(pms_main.log)]
+  end
+
+  subgraph D[데이터 소스]
+    D1[시장 데이터\n(가격/환율/지표)]
+    D2[브로커/계좌 데이터\n(보유/평가/입출금)]
+    D3[휴장/거래일 캘린더\n(개장 여부)]
+  end
+
+  subgraph O[산출물(Output)]
+    O1[정리된 테이블\n(output_sum.csv 등)]
+    O2[수익률/요인 데이터\n(asset_returns_monthly.csv,\nfactors_monthly.csv)]
+    O3[리포트\n(Rplots.pdf 또는 Daily Risk PDF)]
+    O4[운용 코멘트 텍스트\n(AI 코멘트 or 수기)]
+  end
+
+  subgraph V[버전관리/배포]
+    G1[Git 로컬 저장소]
+    G2[GitHub 원격 저장소]
+  end
+
+  subgraph N[알림]
+    M1[이메일 발송\n(첨부: PDF / 본문: 요약)]
+  end
+
+  %% ---- flows ----
+  U1 --> S1
+  S1 --> R1
+
+  D1 --> R1
+  D2 --> R1
+  D3 --> R1
+
+  R1 --> O1
+  R1 --> O2
+  R1 --> O3
+  R1 --> L1
+
+  O1 --> O4
+  O3 --> M1
+  O4 --> M1
+
+  R1 --> G1
+  G1 --> G2
+
+  U2 --> M1
+  U2 --> O3
+  U2 --> L1
+```
 
 ---
 
