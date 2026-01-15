@@ -645,7 +645,7 @@ Return_TWR/NAV는 불필요한 판단을 줄여 규칙을 지속하게 만들고
 
 아래는 위에 필자가 시뮬레이션해본 그래프이다.
 
-<img src="./sp500_cash.jpg" width="1000" height="1500" alt="현금4퍼센트근거">
+<img src="./sp500_cash.JPG" width="1000" height="1500" alt="현금4퍼센트근거">
 
 
 ---
