@@ -924,57 +924,57 @@ PMS는 사실 대단한 비밀을 담고 있는 프로그램이 아니다. 오�
 
 0. PMS 전체 구조 한 장 요약
 
-PMS는 아래 순서로 움직입니다.
-
-보유자산 평가 업데이트
-국내주식: stock_eval.R
-미국주식: stock_eval_us.R
-
-누적 기록 갱신
-output_sum.csv (날짜별 총평가금/총수익)
-
-리스크 분석 (데이터가 충분할 때만)
-MDD / CVaR / Stress replay / Monte Carlo / Factor / PCA
-
-1페이지 리포트 생성
-reports/Daily_Risk_YYYYMMDD.pdf
-
-AI 해석 프롬프트 생성
-reports/gemini_prompt.txt
-
-이메일 발송(선택 기능)
-리포트 PDF + AI 코멘트(또는 프롬프트)
+	PMS는 아래 순서로 움직입니다.
+	
+	보유자산 평가 업데이트
+	국내주식: stock_eval.R
+	미국주식: stock_eval_us.R
+	
+	누적 기록 갱신
+	output_sum.csv (날짜별 총평가금/총수익)
+	
+	리스크 분석 (데이터가 충분할 때만)
+	MDD / CVaR / Stress replay / Monte Carlo / Factor / PCA
+	
+	1페이지 리포트 생성
+	reports/Daily_Risk_YYYYMMDD.pdf
+	
+	AI 해석 프롬프트 생성
+	reports/gemini_prompt.txt
+	
+	이메일 발송(선택 기능)
+	리포트 PDF + AI 코멘트(또는 프롬프트)
 
 1. 설치 준비물 체크리스트 (필수)
 
-아래 6가지만 있으면 됩니다.
-
-  * PC/노트북
-  윈도우 10/11 권장
-  집에 남는 노트북이면 더 좋습니다(정전에도 배터리로 버팀)
-
-  * 인터넷 연결
-  와이파이든 유선이든 상관없습니다
-  단, 실행 시간대에 끊기면 데이터 조회가 실패할 수 있습니다
-
-  * R + RStudio
-  R 최신 버전
-  RStudio Desktop
-
-  * PMS 폴더
-  권장 위치: C:\PMS_Core
-  폴더 안에 스크립트/입력파일이 한 번에 모여 있어야 합니다
-
-  * 구글 계정(이메일 발송용)
-  Gmail 계정 1개
-  “앱 비밀번호” 또는 인증 방식 준비
-
-  * Gemini API Key (AI 해석용)
-  제미나이 AI 호출용 API 키
+	아래 6가지만 있으면 됩니다.
+	
+	  * PC/노트북
+	  윈도우 10/11 권장
+	  집에 남는 노트북이면 더 좋습니다(정전에도 배터리로 버팀)
+	
+	  * 인터넷 연결
+	  와이파이든 유선이든 상관없습니다
+	  단, 실행 시간대에 끊기면 데이터 조회가 실패할 수 있습니다
+	
+	  * R + RStudio
+	  R 최신 버전
+	  RStudio Desktop
+	
+	  * PMS 폴더
+	  권장 위치: C:\PMS_Core
+	  폴더 안에 스크립트/입력파일이 한 번에 모여 있어야 합니다
+	
+	  * 구글 계정(이메일 발송용)
+	  Gmail 계정 1개
+	  “앱 비밀번호” 또는 인증 방식 준비
+	
+	  * Gemini API Key (AI 해석용)
+	  제미나이 AI 호출용 API 키
 
 2. PMS 폴더 구조(권장)
-https://github.com/shbang-cmd/PMS_Core 에서 아래 R코드를 복사해 놓습니다.
-설치 후 폴더는 대략 이런 모습이 가장 안정적입니다.
+	https://github.com/shbang-cmd/PMS_Core 에서 아래 R코드를 복사해 놓습니다.
+	설치 후 폴더는 대략 이런 모습이 가장 안정적입니다.
 	
 	C:\PMS_Core
 	
