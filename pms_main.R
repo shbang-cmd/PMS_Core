@@ -29,18 +29,20 @@
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
-         "xts", "rugarch", "htmltools")
+         "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
+         "dplyr", "writexl")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
 
-library(readr);   library(readxl);  library(showtext)
-library(openxlsx); library(rvest);  library(httr)
-library(dplyr);   library(ggplot2); library(scales)
+library(readr); library(readxl); library(showtext)
+library(openxlsx); library(rvest); library(httr)
+library(dplyr); library(ggplot2); library(scales)
 library(patchwork); library(treemap); library(DT)
 library(stringr); library(PerformanceAnalytics)
 library(zoo); library(tidyr); library(quantmod); library(xts)
-library(rugarch); library(htmltools)
+library(rugarch); library(htmltools); library(tidyverse)
+library(writexl)
 
 # =========================================================
 # 개인별 세팅 변수
