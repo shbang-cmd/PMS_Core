@@ -29,18 +29,20 @@
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
-         "xts", "rugarch", "htmltools")
+         "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
+         "dplyr", "writexl")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
 
-library(readr);   library(readxl);  library(showtext)
-library(openxlsx); library(rvest);  library(httr)
-library(dplyr);   library(ggplot2); library(scales)
+library(readr); library(readxl); library(showtext)
+library(openxlsx); library(rvest); library(httr)
+library(dplyr); library(ggplot2); library(scales)
 library(patchwork); library(treemap); library(DT)
 library(stringr); library(PerformanceAnalytics)
 library(zoo); library(tidyr); library(quantmod); library(xts)
-library(rugarch); library(htmltools)
+library(rugarch); library(htmltools); library(tidyverse)
+library(writexl)
 
 # =========================================================
 # 개인별 세팅 변수
@@ -239,6 +241,7 @@ make_gemini_prompt_pms <- function(
       
       1) 오늘의 한 줄 요약  
       - 운용 상태를 가장 압축적으로 요약한 문장 1개
+      - 최신 평가액과 전일대비 금액은 메일 맨위의 첫줄에 요약해서 먼저 보고
       
       2) 운용 상태 설명  
       - 금일 거래 여부, Flow 유무, Risk-Off 상태를 중심으로
