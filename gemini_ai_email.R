@@ -2,9 +2,11 @@
 # gemini_ai_email.R
 # - Gemini로 프롬프트 질의 -> 응답 이메일 발송 + Daily Risk PDF 첨부
 # - 선행: GEMINI_API_KEY / GMAIL_USER / GMAIL_APP_PASSWORD 환경변수 설정
+#         제미나이에게 물어볼 때는 물어보는 text + 제미나이 API KEY 의 조합이 필요
+#         지메일로 이메일을 보낼 때는 지메일 ID + 지메일 API KEY의 조합이 필요
+#         (지메일이 아니라 DAUM 메일 SMTP로 보낸다고 해도 앱 key를 미리 받아놔야 함)
 # - 운영(배치/Rscript) 안정형
 # ============================================================
-library(blastula)
 
 # ------------------------------------------------------------
 # 0) 기본 옵션 (배치에서 CRAN 미러 고정, 타임아웃)
@@ -17,6 +19,8 @@ options(timeout = 120)
 #    - 설치는 RStudio에서 1회 수행
 # ------------------------------------------------------------
 pkg <- c("blastula", "httr2", "jsonlite", "glue", "quantmod", "xts")
+
+library(blastula)
 
 missing <- setdiff(pkg, rownames(installed.packages()))
 if (length(missing)) {
@@ -223,6 +227,8 @@ if (!pdf_exists) {
 cat("메일 작성 시작.\n")
 
 to <- "seminago@naver.com"  # 수신 메일 지정 (필요시 벡터로 다중 수신)
+# 코드를 따라하시는 위의 수신인 메일주소를 반드시 바꿀 것(소중한 자산 포트폴리오 현황을 필자에게 보고하시는 일이 없도록^^)
+                   
 subject <- sprintf("[PMS 자산현황 AI보고] %s", format(now_kst, "%Y-%m-%d"))
 
 email <- compose_email(
