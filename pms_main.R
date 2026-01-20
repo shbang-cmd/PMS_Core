@@ -23,6 +23,8 @@
 # 이 코드는 "돈을 얼마나 벌었는지를 관리하지 않는다. 망하지 않을 구조만 관리한다."
 # 위험관리 핵심 3대 지표 : MDD · CVaR · Risk-Off 3개
 
+# 주의 : 표본수가 100일 미만이면 그래프는 만들지 않음 -> 100일 이상 표본수(누적일) 필요, 단, 엑셀 출력은 계속 만듦
+
 # =========================================================
 # 패키지 설치/로드
 # =========================================================
@@ -60,7 +62,7 @@ weights <- c(
   0.04   # CASH : 현금이 아니라 종목으로서의 현금을 뜻함
 )
 
-REPEAT_FLAG = FALSE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
+REPEAT_FLAG = TRUE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
 
 # =========================================================
 # 개인별 세팅 변수 끝
@@ -202,8 +204,8 @@ make_gemini_prompt_pms <- function(
   # 프로그래밍도 중요하지만 Prompt engineering도 중요
   # 아래 스크립트를 잘 써야지 인공지능이 제대로 답변해 줌
   
-    paste0(
-      "당신은 연기금·헤지펀드 등 기관 자산운용사에서 다년간 근무한
+  paste0(
+    "당신은 연기금·헤지펀드 등 기관 자산운용사에서 다년간 근무한
       수석 포트폴리오 매니저(CIO급)입니다.
       
       아래 입력 데이터는 한 개인 포트폴리오의
@@ -278,20 +280,20 @@ make_gemini_prompt_pms <- function(
       일반적인 금융시장 분위기를 정성적으로 요약할 수 있습니다.
       단, 특정 수치·지수·방향성 예측은 금지합니다.
       ---\n",
-      "[Fund Name] : ", fund_name, "\n",
-      "[Report Time] : ", report_time_kst, " (KST)\n\n",
-      "=== [0] Flow/거래 ===\n", flow_text, "\n\n",
-      "=== [1] 배지 ===\n", badge_txt, "\n\n",
-      "=== [2] KPI ===\n", kpi_txt, "\n\n",
-      "=== [3] 드로다운/위험지표 ===\n", risk_txt, "\n\n",
-      "=== [4] 최근 ", take_last_n_days, "일 원자료(dd tail) ===\n",
-      paste(tab_txt, collapse = "\n"), "\n\n",
-      "=== [5] Warnings ===\n", warn_txt, "\n\n",
-      "=== [6] Errors ===\n", err_txt, "\n\n",
-      "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
-      "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n",
-      "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n")
-  }
+    "[Fund Name] : ", fund_name, "\n",
+    "[Report Time] : ", report_time_kst, " (KST)\n\n",
+    "=== [0] Flow/거래 ===\n", flow_text, "\n\n",
+    "=== [1] 배지 ===\n", badge_txt, "\n\n",
+    "=== [2] KPI ===\n", kpi_txt, "\n\n",
+    "=== [3] 드로다운/위험지표 ===\n", risk_txt, "\n\n",
+    "=== [4] 최근 ", take_last_n_days, "일 원자료(dd tail) ===\n",
+    paste(tab_txt, collapse = "\n"), "\n\n",
+    "=== [5] Warnings ===\n", warn_txt, "\n\n",
+    "=== [6] Errors ===\n", err_txt, "\n\n",
+    "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
+    "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n",
+    "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n")
+}
 
 
 save_if_changed <- function(text, file_path) {
@@ -371,7 +373,7 @@ repeat {
       cash_like <- 0  # ★ 현금성 금액(원). 필요 시 수동 입력/연동
       
       sum_value <- round(sum_value + cash_like, 0)
-
+      
       result <- data.frame(Date = today, Sum = sum_value, Profit = profit_value)
       
       # output_sum.csv 갱신
@@ -381,22 +383,22 @@ repeat {
                                                    Sum = col_double(),
                                                    Profit = col_double()),
                                   show_col_types = FALSE)
-
+        
         # # existing_data의 마지막행이 공백행이면 제거
         # existing_data <- existing_data %>%
         #   dplyr::filter(!is.na(Date))
-
+        
         
         # 마지막행이 오늘이라면 그 행 삭제
         if (nrow(existing_data) > 0 && tail(existing_data$Date, 1) == Sys.Date()) {
           existing_data <- existing_data[-nrow(existing_data), ]
         }
-
+        
         updated_data <- bind_rows(existing_data, result)
       } else {
         updated_data <- result
       }
-
+      
       # 
       # # output_sum.csv 갱신
       # if (file.exists(output_file)) {
@@ -425,10 +427,15 @@ repeat {
       # }
       # 
       
-            
+      
       write_csv(updated_data, output_file)
       
-      is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
+      # is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
+      dd_daily_n <- updated_data %>% dplyr::distinct(Date) %>% dplyr::filter(!is.na(Date)) %>% nrow()
+      risk_ready <- dd_daily_n >= min_days_for_risk
+      is_initial_mode <- !risk_ready
+      
+      
       
       # 분석용 데이터 재읽기 + Return 계산
       dd <- readr::read_csv(
@@ -501,11 +508,11 @@ repeat {
           suppressWarnings(try(run_future_mdd_from_dd(dd, years=10, monthly_contrib=5000000, n_sims=2000), silent=TRUE))
           #suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=200000000,
           suppressWarnings(try(run_mc_withdraw_from_dd(dd, years=30, annual_withdraw=78000000,  # 연 78백만원(월 650만원) 인출 가정
-          n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
+                                                       n_sims=5000, withdraw_freq="monthly"), silent=TRUE))
           # 연 인출액 7,800만원은
           # 국민연금을 제외한 월 450만 원의 실질 소비를
           # 물가상승률 2.5%를 반영해 30년 평균 명목 기준으로 환산한 값
- 
+          
           if (file.exists("factors_monthly.csv") && file.exists("asset_returns_monthly.csv")) {
             cat("[리스크] 팩터 회귀 실행...\n")
             suppressWarnings(try(run_factor_model_from_files("asset_returns_monthly.csv","factors_monthly.csv",weights), silent=TRUE))
@@ -720,7 +727,7 @@ repeat {
         
         asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-
+        
         # NA 방탄
         asset_SCHD[is.na(asset_SCHD)] <- 0
         asset_QQQ[is.na(asset_QQQ)]   <- 0
@@ -1049,7 +1056,7 @@ repeat {
               high = "dodgerblue4", # 위쪽: 확실한 파랑
               limits = c(dd_min, dd_max)
             ) +
-          
+            
             labs(
               title = paste0(
                 "Drawdown (현재: ", sprintf("%.2f%%", cur_dd_pct),
@@ -1152,10 +1159,24 @@ repeat {
           # =========================================================
           # combined_plot 결합
           # =========================================================
-          combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
-            patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40)) &
+          # combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
+          #   patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40)) &
+          #   theme(legend.position = "none",
+          #         plot.margin = margin(10, 20, 10, 20))
+          
+          if (risk_ready) {
+            combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
+              patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40))
+          } else {
+            combined_plot <- (p / p_mid / p_weight_bar) +
+              patchwork::plot_layout(heights = c(2.2, 1, 0.40))
+          }
+          
+          combined_plot <- combined_plot &
             theme(legend.position = "none",
                   plot.margin = margin(10, 20, 10, 20))
+          
+          
           
           suppressMessages(print(combined_plot))
           
@@ -1199,7 +1220,7 @@ repeat {
       
       warnings_vec <- if (exists("warnings_vec")) warnings_vec else character(0)
       errors_vec   <- if (exists("errors_vec"))   errors_vec   else character(0)
-
+      
       prompt_text <- make_gemini_prompt_pms(
         dd = dd,
         sum_xts = sum_xts,
