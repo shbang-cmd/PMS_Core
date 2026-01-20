@@ -259,7 +259,7 @@ PMS는 “주식의 자동 평가액 기록관리 가계부”다
 정상실행시 Rstudio 화면 예시
 트리맵 예시화면
 
-<img src="./pms_snapshot.JPG" width="1000" height="800" alt="PMS화면예시">
+<img src="./pms_screen_snapshot.JPG" width="1000" height="800" alt="PMS화면예시">
 
 
 구성비율 트리맵이 강력한 이유
