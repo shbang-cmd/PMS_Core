@@ -1,5 +1,5 @@
 @echo off
-
+chcp 65001 > nul
 REM =============================================
 REM PMS Gemini AI Email Runner
 REM Logs all stdout/stderr with timestamps
