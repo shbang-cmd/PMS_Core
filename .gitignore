@@ -7,3 +7,5 @@ reports/
 *.xlsx
 *.XLSX
 *.csv
+*.pdf
+*.log
