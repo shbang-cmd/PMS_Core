@@ -27,45 +27,91 @@ output_file <- paste0("output_stock_", today, ".xlsx")
 if (file.exists(output_file)) file.remove(output_file)
 
 # 네이버에서 실시간 현재가를 가져오는 함수
+# get_price_naver <- function(ticker) {
+#   tryCatch({
+#     # ① .KS, .KQ 제거
+#     code <- gsub("\\.K[QS]$", "", ticker)
+#     # ② 숫자만 추출
+#     code <- gsub("\\D", "", code)
+#     
+#     # ③ 6자리 zero-padding (예: "680" → "000680")
+#     if (nchar(code) > 0) {
+#       code <- sprintf("%06d", as.numeric(code))
+#     } else {
+#       stop("Invalid ticker format")
+#     }
+#     
+#     url  <- paste0("https://finance.naver.com/item/sise.naver?code=", code)
+#     html <- read_html(httr::GET(url, httr::add_headers(
+#       "User-Agent" = "Mozilla/5.0"
+#     )))
+#     
+#     node <- html_node(html, css = "#_nowVal")
+#     if (is.na(node) || length(node) == 0) {
+#       node <- html_node(html, xpath = '//*[@id="_nowVal"]')
+#     }
+#     if (is.na(node) || length(node) == 0) {
+#       node <- html_node(html, xpath = '//*[@id="chart_area"]//p[contains(@class,"no_today")]//span[contains(@class,"blind")]')
+#     }
+#     
+#     price <- node |>
+#       html_text() |>
+#       gsub(",", "", x = _, fixed = TRUE) |>
+#       as.numeric()
+#     
+#     if (is.na(price)) stop("가격 파싱 실패")
+#     price
+#   }, error = function(e) {
+#     warning(sprintf("가격 조회 실패: %s (%s)", ticker, e$message))
+#     NA_real_
+#   })
+# }
+
 get_price_naver <- function(ticker) {
   tryCatch({
-    # ① .KS, .KQ 제거
-    code <- gsub("\\.K[QS]$", "", ticker)
-    # ② 숫자만 추출
-    code <- gsub("\\D", "", code)
+    # ① .KS, .KQ 제거 (대소문자 대응)
+    code <- toupper(gsub("\\.K[QS]$", "", ticker))
     
-    # ③ 6자리 zero-padding (예: "680" → "000680")
-    if (nchar(code) > 0) {
-      code <- sprintf("%06d", as.numeric(code))
-    } else {
-      stop("Invalid ticker format")
+    # ② 영숫자만 남김 (00680K 같은 케이스 유지)
+    code <- gsub("[^0-9A-Z]", "", code)
+    
+    # ③ 네이버 코드 길이 체크 (보통 6자리)
+    if (nchar(code) != 6) stop("Invalid code length (need 6 chars)")
+    
+    url <- paste0("https://finance.naver.com/item/sise.naver?code=", code)
+    
+    # 요청 + 상태 체크 + 텍스트 파싱
+    resp <- httr::GET(url, httr::add_headers(`User-Agent` = "Mozilla/5.0"))
+    httr::stop_for_status(resp)
+    html <- rvest::read_html(httr::content(resp, as = "text", encoding = "EUC-KR"))
+    
+    # 가격 노드 찾기 (우선순위)
+    node <- rvest::html_node(html, css = "#_nowVal")
+    if (length(node) == 0) node <- rvest::html_node(html, xpath = '//*[@id="_nowVal"]')
+    if (length(node) == 0) {
+      node <- rvest::html_node(
+        html,
+        xpath = '//*[@id="chart_area"]//p[contains(@class,"no_today")]//span[contains(@class,"blind")]'
+      )
     }
+    if (length(node) == 0) stop("price node not found")
     
-    url  <- paste0("https://finance.naver.com/item/sise.naver?code=", code)
-    html <- read_html(httr::GET(url, httr::add_headers(
-      "User-Agent" = "Mozilla/5.0"
-    )))
+    # 텍스트 추출 → 정리 → 숫자 변환 (파이프/placeholder 제거)
+    txt <- rvest::html_text(node, trim = TRUE)
+    if (is.na(txt) || nchar(txt) == 0) stop("empty price text")
     
-    node <- html_node(html, css = "#_nowVal")
-    if (is.na(node) || length(node) == 0) {
-      node <- html_node(html, xpath = '//*[@id="_nowVal"]')
-    }
-    if (is.na(node) || length(node) == 0) {
-      node <- html_node(html, xpath = '//*[@id="chart_area"]//p[contains(@class,"no_today")]//span[contains(@class,"blind")]')
-    }
-    
-    price <- node |>
-      html_text() |>
-      gsub(",", "", x = _, fixed = TRUE) |>
-      as.numeric()
-    
+    txt <- gsub(",", "", txt, fixed = TRUE)
+    price <- suppressWarnings(as.numeric(txt))
     if (is.na(price)) stop("가격 파싱 실패")
+    
     price
   }, error = function(e) {
     warning(sprintf("가격 조회 실패: %s (%s)", ticker, e$message))
     NA_real_
   })
 }
+
+
 
 # 수익금 계산
 tickername <- character()
