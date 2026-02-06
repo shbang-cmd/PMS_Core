@@ -1,5 +1,16 @@
 @echo off
 chcp 65001 > nul
+
+REM =============================================
+REM Sunday check (0=Sunday, 6=Saturday)
+REM =============================================
+for /f %%a in ('powershell -command "(Get-Date).DayOfWeek.value__"') do set DOW=%%a
+
+if "%DOW%"=="0" (
+    echo [PMS] Sunday detected. Skip gemini mail runner.
+    exit /b 0
+)
+
 REM =============================================
 REM PMS Gemini AI Email Runner
 REM Logs all stdout/stderr with timestamps
@@ -32,3 +43,4 @@ set EXITCODE=%ERRORLEVEL%
 
 echo END   : %DATE% %TIME% >> %LOGFILE%
 echo EXIT  : %EXITCODE% >> %LOGFILE%
+
