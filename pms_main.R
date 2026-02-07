@@ -46,10 +46,10 @@ library(zoo); library(tidyr); library(quantmod); library(xts)
 library(rugarch); library(htmltools); library(tidyverse)
 library(writexl)
 
-# -------------------------------------------------
-# Sunday check : 일요일이면 바로 종료
-# (참고) 토요일은 전날 밤에 미국시장이 운영되므로 그냥 실행하게 함
-# -------------------------------------------------
+-------------------------------------------------
+Sunday check : 일요일이면 바로 종료
+(참고) 토요일은 전날 밤에 미국시장이 운영되므로 그냥 실행하게 함
+-------------------------------------------------
 today <- Sys.Date()
 
 # as.POSIXlt 기준: 0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -1192,13 +1192,15 @@ repeat {
               ggplot2::geom_segment(
                 data = seg,
                 ggplot2::aes(x = x0, y = y, xend = x1, yend = y, colour = col),
-                linewidth = ring_width, lineend = "round"
+                # linewidth = ring_width, lineend = "round"
+                linewidth = ring_width, lineend = "butt"
               ) +
               ggplot2::scale_colour_identity() +
               ggplot2::geom_segment(
                 data = needle_base,
                 ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
-                linewidth = 3.0, lineend = "round"
+                # linewidth = 3.0, lineend = "round"
+                linewidth = 3.0, lineend = "butt"
               ) +
               ggplot2::geom_segment(
                 data = needle_tip,
