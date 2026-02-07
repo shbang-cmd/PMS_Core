@@ -881,7 +881,10 @@ repeat {
             geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
             geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
             geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
-            scale_color_gradient(low = "red", high = "blue") +
+            scale_color_gradient( # 손익별 색깔
+              low  = "#D55E00",   # 선명한 주황(손실)
+              high = "#0072B2",   # 선명한 파랑(이익)
+              name="손익\n(단위:\n천만원)") +
             scale_x_date(limits = common_date_range,
                          date_breaks = "2 months",
                          labels = scales::label_date_short(),
@@ -895,7 +898,11 @@ repeat {
             theme(plot.title.position = "plot",
                   plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
                   plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
-                  axis.title.y.right = element_text(color = "green", size = 9, face = "bold")) +
+                  axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
+                  # ✅ 범례 글자 크기 조절
+                  legend.title = element_text(size = 9),
+                  legend.text  = element_text(size = 8)
+                  ) +
             coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
             annotate("text",
                      x = min(dd_plot_base$Date, na.rm = TRUE),
@@ -1051,6 +1058,7 @@ repeat {
             theme_minimal(base_size = 13) +
             theme(
               axis.title.y.right = element_text(color = "purple", size = 9),
+              axis.title.x       = element_text(size = 9),
               legend.position = "none"
             )
           
