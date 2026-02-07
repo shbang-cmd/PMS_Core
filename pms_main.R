@@ -75,7 +75,7 @@ weights <- c(
   0.04   # CASH : 현금이 아니라 종목으로서의 현금을 뜻함
 )
 
-REPEAT_FLAG = TRUE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
+REPEAT_FLAG = FALSE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
 
 # =========================================================
 # 개인별 세팅 변수 끝
@@ -411,36 +411,7 @@ repeat {
       } else {
         updated_data <- result
       }
-      
-      # 
-      # # output_sum.csv 갱신
-      # if (file.exists(output_file)) {
-      #   existing_data <- readr::read_csv(
-      #     output_file,
-      #     col_types = readr::cols(
-      #       Date   = readr::col_date(format = ""),
-      #       Sum    = readr::col_double(),
-      #       Profit = readr::col_double()
-      #     ),
-      #     show_col_types = FALSE
-      #   )
-      #   
-      #   # 공백/깨진 행 제거
-      #   existing_data <- existing_data %>% dplyr::filter(!is.na(Date))
-      #   
-      #   # 오늘 날짜는 기존에 몇 줄이 있든 "전부" 제거
-      #   existing_data <- existing_data %>% dplyr::filter(Date != Sys.Date())
-      #   
-      #   # 오늘 결과 1줄 추가 + 정렬
-      #   updated_data <- dplyr::bind_rows(existing_data, result) %>%
-      #     dplyr::arrange(Date)
-      #   
-      # } else {
-      #   updated_data <- result
-      # }
-      # 
-      
-      
+
       write_csv(updated_data, output_file)
       
       # is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
@@ -903,7 +874,7 @@ repeat {
           
           # ---------- 상단 플롯(p) ----------
           p <- ggplot(dd_plot_base, aes(x = Date)) +
-            geom_point(aes(y = sum_left, color = Profit / 10000000), size = 5, na.rm = TRUE) +
+            geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
             geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
             geom_smooth(aes(y = sum_left), method = "lm", formula = y ~ x, se = FALSE,
                         color = "orange", linetype = "dashed", linewidth = 1) +
@@ -942,7 +913,7 @@ repeat {
           
           # ---------- 중단 누적수익(막대)+수익률(선) ----------
           dd_mid <- dd_plot_base %>%
-            mutate(Profit_man = Profit / 10000000,
+            mutate(Profit_man = Profit / 1e7,
                    Return_pct = (Profit / Sum) * 100,
                    Status = ifelse(Profit_man >= 0, "Plus", "Minus"))
           
@@ -1169,26 +1140,210 @@ repeat {
               plot.margin = margin(2, 10, 2, 10)
             )
           
-          # =========================================================
-          # combined_plot 결합
-          # =========================================================
-          # combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
-          #   patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40)) &
-          #   theme(legend.position = "none",
-          #         plot.margin = margin(10, 20, 10, 20))
+
           
-          if (risk_ready) {
-            combined_plot <- (p / p_mid / p_dd / p_weight_bar) +
-              patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40))
-          } else {
-            combined_plot <- (p / p_mid / p_weight_bar) +
-              patchwork::plot_layout(heights = c(2.2, 1, 0.40))
+          gauge_share_plot <- function(cur_val, max_val,
+                                       title = "Gauge",
+                                       cur_text = NULL,
+                                       max_text = NULL,
+                                       ring_width = 6) {
+            
+            if (is.na(cur_val) || is.na(max_val) || max_val == 0) stop("cur/max 값이 NA이거나 max_val이 0입니다.")
+            
+            ratio <- abs(cur_val) / abs(max_val)
+            ratio <- max(0, min(1, ratio))
+            
+            # 0%(12시) -> 100%(3시): x=-pi/2 -> x=-pi
+            needle_x <- -pi/2 - ratio*(pi/2)
+            
+            seg <- data.frame(
+              x0  = c(-pi/2, -2*pi/3, -5*pi/6),
+              x1  = c(-2*pi/3, -5*pi/6, -pi),
+              y   = 1,
+              col = c("#9BE37D", "#FFD84D", "#FFA24D")
+            )
+            
+            # 허브/바늘
+            hub_y <- 0.12
+            needle_base <- data.frame(x = needle_x, y0 = hub_y,        y1 = hub_y + 0.26)
+            needle_tip  <- data.frame(x = needle_x, y0 = hub_y + 0.10, y1 = 0.95)
+            
+            if (is.null(cur_text)) cur_text <- as.character(cur_val)
+            if (is.null(max_text)) max_text <- as.character(max_val)
+            
+            # ✅ 우측 텍스트(게이지 바로 오른쪽, 같은 패널 안)
+            side_txt <- sprintf("Current : %s\nMax(100%%): %s", cur_text, max_text)
+            
+            # share label at needle
+            share_label <- scales::percent(ratio, accuracy = 0.01)
+            
+            # ---------------------------------------------------------
+            # 1) 게이지 그림 
+            # ---------------------------------------------------------
+            p_gauge <- ggplot2::ggplot() +
+              ggplot2::geom_segment(
+                data = seg,
+                ggplot2::aes(x = x0, y = y, xend = x1, yend = y, colour = col),
+                linewidth = ring_width, lineend = "round"
+              ) +
+              ggplot2::scale_colour_identity() +
+              ggplot2::geom_segment(
+                data = needle_base,
+                ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
+                linewidth = 3.0, lineend = "round"
+              ) +
+              ggplot2::geom_segment(
+                data = needle_tip,
+                ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
+                linewidth = 1.3,
+                arrow = grid::arrow(length = grid::unit(0.04, "npc"), type = "closed")
+              ) +
+              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = hub_y), size = 3.4) +
+              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = hub_y), size = 1.2) +
+              ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color="gray") +
+              ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color="gray") +
+              ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color="gray") +
+              ggplot2::annotate(
+                "text",
+                x = needle_x, y = 1.18,
+                label = share_label,
+                size = 3.3,
+                fontface = "bold.italic",
+                colour = "blue"
+              ) +
+              # ✅ 타이틀을 게이지 내부 좌상단에 고정(패널의 좌측/우측 헷갈림 제거)
+              ggplot2::annotate(
+                "text",
+                x = -pi, y = 1.22,
+                label = title,
+                hjust = 0, vjust = 1,
+                size = 4.2, fontface = "bold"
+              ) +
+              ggplot2::coord_polar(theta = "x", start = pi, direction = 1, clip = "off") +
+              ggplot2::xlim(-pi, 0) +
+              ggplot2::ylim(0, 1.25) +
+              ggplot2::theme_void() +
+              ggplot2::theme(
+                plot.margin = ggplot2::margin(2, 0, 2, 0)
+              )
+            
+            # ---------------------------------------------------------
+            # 2) 우측 텍스트 패널 (게이지 바로 오른쪽)
+            # ---------------------------------------------------------
+            p_text <- ggplot2::ggplot() +
+              ggplot2::theme_void() +
+              ggplot2::annotate(
+                "text",
+                x = -0.9, y = 0,      # 텍스트 위치
+                label = side_txt,
+                hjust = 0, vjust = 0.5,
+                size = 3.0,
+                colour = "blue",
+                fontface = "italic",
+                lineheight = 0.95
+              ) +
+              ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
+              ggplot2::theme(plot.margin = ggplot2::margin(2, 0, 2, 0))
+            
+            # ✅ “한 카드”로 결합: 게이지(좌) + 텍스트(우)
+            p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
           }
           
-          combined_plot <- combined_plot &
-            theme(legend.position = "none",
-                  plot.margin = margin(10, 20, 10, 20))
           
+          
+          gauge_with_left_title <- function(gauge_plot, title_left,
+                                            left_width = 0.55, right_width = 1.45) {
+            p_left <- ggplot2::ggplot() +
+              ggplot2::theme_void() +
+              ggplot2::annotate("text", x = 0, y = 0,
+                                label = title_left,
+                                hjust = 0, vjust = 0.5,
+                                size = 5, fontface = "bold") +
+              ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
+              ggplot2::theme(plot.margin = ggplot2::margin(6, 2, 6, 8))
+            
+            p_left + gauge_plot +
+              patchwork::plot_layout(widths = c(left_width, right_width))
+          }
+          
+
+          
+          build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum,
+                                           ui_win = 63) {
+            
+            cur_sum_amt <- as.numeric(today_sum)
+            
+            dd_vec <- dd2$DD
+            dd_vec <- dd_vec[is.finite(dd_vec)]
+            if (length(dd_vec) < 5) {
+              return(ggplot2::ggplot() + ggplot2::theme_void() +
+                       ggplot2::annotate("text", x=0, y=0, label="DD 데이터 부족", size=5))
+            }
+            
+            cur_dd <- as.numeric(today_dd)
+            mdd    <- as.numeric(min(dd_vec, na.rm = TRUE))
+            
+            cvar_ratio <- NA_real_
+            if (!is.na(cvar_amt) && is.finite(cvar_amt) && is.finite(cur_sum_amt) && cur_sum_amt > 0) {
+              cvar_ratio <- -abs(as.numeric(cvar_amt) / cur_sum_amt)
+            }
+            
+            cur_dur <- as.integer(consecutive_days)
+            r <- rle(dd_vec < 0)
+            max_dur <- if (any(r$values)) max(r$lengths[r$values]) else 0L
+            if (max_dur == 0) max_dur <- 1L
+            
+            ui_roll <- zoo::rollapply(
+              dd_vec, width = ui_win, align = "right", fill = NA_real_,
+              FUN = function(x) sqrt(mean(x^2, na.rm = TRUE))
+            )
+            cur_ui <- as.numeric(tail(ui_roll, 1))
+            max_ui <- suppressWarnings(max(as.numeric(ui_roll), na.rm = TRUE))
+            if (!is.finite(max_ui) || max_ui == 0) max_ui <- 1e-9
+            
+            g1 <- gauge_share_plot(cur_dd, mdd,
+                                   title    = "DD vs MDD",
+                                   cur_text = scales::percent(cur_dd, accuracy = 0.01),
+                                   max_text = scales::percent(mdd,    accuracy = 0.01)
+            )
+            
+            if (is.na(cvar_ratio)) {
+              g2 <- ggplot2::ggplot() + ggplot2::theme_void() +
+                ggplot2::annotate("text", x=0, y=0, label="CVaR 데이터 없음", size=5)
+            } else {
+              g2 <- gauge_share_plot(cur_dd, cvar_ratio,
+                                     title    = "DD vs CVaR",
+                                     cur_text = scales::percent(cur_dd, accuracy = 0.01),
+                                     max_text = scales::percent(cvar_ratio, accuracy = 0.01)
+              )
+            }
+            
+            g3 <- gauge_share_plot(cur_dur, max_dur,
+                                   title    = "DD Duration",
+                                   cur_text = paste0(cur_dur, "D"),
+                                   max_text = paste0(max_dur, "D")
+            )
+            
+            g4 <- gauge_share_plot(cur_ui, max_ui,
+                                   title    = paste0("Ulcer(", ui_win, "D)"),
+                                   cur_text = ifelse(is.na(cur_ui), "NA", scales::percent(cur_ui, accuracy = 0.01)),
+                                   max_text = scales::percent(max_ui, accuracy = 0.01)
+            )
+            
+            patchwork::wrap_plots(g1, g2, g3, g4, nrow = 1)
+          }
+          
+          
+          g_row <- build_risk_gauge_row(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63)
+          
+          
+          if (risk_ready) {
+            combined_plot <- (p / p_mid / p_dd / p_weight_bar / g_row) +
+              patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40, 0.65))
+          } else {
+            combined_plot <- (p / p_mid / p_weight_bar / g_row) +
+              patchwork::plot_layout(heights = c(2.2, 1, 0.40, 0.65))
+          }
           
           
           suppressMessages(print(combined_plot))
