@@ -1164,9 +1164,9 @@ repeat {
             )
             
             # 허브/바늘
-            hub_y <- 0.12
-            needle_base <- data.frame(x = needle_x, y0 = hub_y,        y1 = hub_y + 0.26)
-            needle_tip  <- data.frame(x = needle_x, y0 = hub_y + 0.10, y1 = 0.95)
+            hub_y <- 0
+            needle_base <- data.frame(x = needle_x, y0 = 0.0, y1 = 0.3)
+            needle_tip  <- data.frame(x = needle_x, y0 = 0.12, y1 = 0.95)
             
             if (is.null(cur_text)) cur_text <- as.character(cur_val)
             if (is.null(max_text)) max_text <- as.character(max_val)
@@ -1198,8 +1198,8 @@ repeat {
                 linewidth = 1.3,
                 arrow = grid::arrow(length = grid::unit(0.04, "npc"), type = "closed")
               ) +
-              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = hub_y), size = 3.4) +
-              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = hub_y), size = 1.2) +
+              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 3.4) +
+              ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 1.2) +
               ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color="gray") +
               ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color="gray") +
               ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color="gray") +
