@@ -46,16 +46,20 @@ library(zoo); library(tidyr); library(quantmod); library(xts)
 library(rugarch); library(htmltools); library(tidyverse)
 library(writexl)
 
--------------------------------------------------
-Sunday check : 일요일이면 바로 종료
-(참고) 토요일은 전날 밤에 미국시장이 운영되므로 그냥 실행하게 함
--------------------------------------------------
+# -------------------------------------------------
+# Sunday check : 일요일이면 바로 종료
+# (참고) 토요일은 전날 밤에 미국시장이 운영되므로 그냥 실행하게 함
+# -------------------------------------------------
 today <- Sys.Date()
 
 # as.POSIXlt 기준: 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-if (as.POSIXlt(today)$wday == 0) {  # 일요일이면
+if (as.POSIXlt(today)$wday == 0) {  # 일요일
   message("[PMS] 오늘은 일요일이므로 실행하지 않고 종료합니다.")
-  quit(save = "no", status = 0)
+  if (interactive()) {  # Rstudio에서 하면 R세션유지하고 종료
+    stop("PMS stopped (The stock market is closed today because it is Sunday)", call. = FALSE)
+  } else {              # 스크립트를 실행하면 세션까지 종료
+    quit(save = "no", status = 0)
+  }
 }
 
 
@@ -1258,7 +1262,6 @@ repeat {
             # ✅ “한 카드”로 결합: 게이지(좌) + 텍스트(우)
             p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
           }
-          
           
           
           gauge_with_left_title <- function(gauge_plot, title_left,
