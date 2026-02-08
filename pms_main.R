@@ -743,20 +743,18 @@ repeat {
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
           pull(합계) %>% tidyr::replace_na(0)
         
-        
-        # NA 방탄
-        asset_SCHD[is.na(asset_SCHD)] <- 0
-        asset_QQQ[is.na(asset_QQQ)]   <- 0
-        asset_TQQQ[is.na(asset_TQQQ)] <- 0
-        asset_GLD[is.na(asset_GLD)]   <- 0
-        asset_IEF[is.na(asset_IEF)]   <- 0
-        
-        # CASH는 KOFR/BIL/SGOV 종목(현금성 ETF)로 정의
         asset_CASH <- rt %>%
           filter(str_detect(종목명, "KOFR|BIL|SGOV|머니마켓")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
-          pull(합계)
-        asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
+          pull(합계) %>% tidyr::replace_na(0)
+        
+        # # NA 방탄
+        # asset_SCHD[is.na(asset_SCHD)] <- 0
+        # asset_QQQ[is.na(asset_QQQ)]   <- 0
+        # asset_TQQQ[is.na(asset_TQQQ)] <- 0
+        # asset_GLD[is.na(asset_GLD)]   <- 0
+        # asset_IEF[is.na(asset_IEF)]   <- 0
+        # asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
         
         # SPY_ETC는 "종목 중 나머지"로 정의
         asset_SPY_ETC <- today_tsum_stock - asset_SCHD - asset_QQQ - asset_TQQQ - asset_GLD - asset_IEF - asset_CASH
