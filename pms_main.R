@@ -701,20 +701,48 @@ repeat {
         today_tsum       <- today_tsum_stock + cash_like       # 총합(종목 + 현금성)
         
         # 종목명 기반 버킷 집계 (필요시 키워드 보완)
-        asset_SCHD <- rt %>% filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
-          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        # asset_SCHD <- rt %>% filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
+        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        # 
+        # asset_QQQ  <- rt %>% filter(str_detect(종목명, "나스닥100|QQQ"), !str_detect(종목명, "TQQQ")) %>%
+        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        # 
+        # asset_TQQQ <- rt %>% filter(str_detect(종목명, "TQQQ")) %>%
+        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        # 
+        # asset_GLD  <- rt %>% filter(str_detect(종목명, "금현물")) %>%
+        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        # 
+        # asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
+        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        asset_SCHD <- rt %>%
+          filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
+          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
+          pull(합계) %>% tidyr::replace_na(0)
         
-        asset_QQQ  <- rt %>% filter(str_detect(종목명, "나스닥100|QQQ"), !str_detect(종목명, "TQQQ")) %>%
-          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        asset_QQQ <- rt %>%
+          filter(
+            str_detect(종목명, "나스닥100|QQQ") &
+              !str_detect(종목명, "TQQQ")
+          ) %>%
+          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
+          pull(합계) %>% tidyr::replace_na(0)
         
-        asset_TQQQ <- rt %>% filter(str_detect(종목명, "TQQQ")) %>%
-          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        asset_TQQQ <- rt %>%
+          filter(str_detect(종목명, "TQQQ")) %>%
+          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
+          pull(합계) %>% tidyr::replace_na(0)
         
-        asset_GLD  <- rt %>% filter(str_detect(종목명, "금현물")) %>%
-          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        asset_GLD <- rt %>%
+          filter(str_detect(종목명, "금현물")) %>%
+          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
+          pull(합계) %>% tidyr::replace_na(0)
         
-        asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
-          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
+        asset_IEF <- rt %>%
+          filter(str_detect(종목명, "채권|국채")) %>%
+          summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
+          pull(합계) %>% tidyr::replace_na(0)
+        
         
         # NA 방탄
         asset_SCHD[is.na(asset_SCHD)] <- 0
