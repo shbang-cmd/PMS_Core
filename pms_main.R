@@ -79,7 +79,7 @@ weights <- c(
   0.04   # CASH : 현금이 아니라 종목으로서의 현금을 뜻함
 )
 
-REPEAT_FLAG = FALSE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
+REPEAT_FLAG = TRUE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
 
 # =========================================================
 # 개인별 세팅 변수 끝
@@ -1327,7 +1327,21 @@ repeat {
               cvar_ratio <- -abs(as.numeric(cvar_amt) / cur_sum_amt)
             }
             
-            cur_dur <- as.integer(consecutive_days)
+            # cur_dur <- as.integer(consecutive_days)
+            # Drawdown 연속일(=현재 DD 구간의 길이)
+            if (length(dd_vec) == 0 || is.na(tail(dd_vec, 1))) {
+              cur_dur <- NA_integer_
+            } else if (tail(dd_vec, 1) >= 0) {
+              cur_dur <- 0L
+            } else {
+              i <- length(dd_vec)
+              cur_dur <- 0L
+              while (i >= 1 && !is.na(dd_vec[i]) && dd_vec[i] < 0) {
+                cur_dur <- cur_dur + 1L
+                i <- i - 1
+              }
+            }
+            
             r <- rle(dd_vec < 0)
             max_dur <- if (any(r$values)) max(r$lengths[r$values]) else 0L
             if (max_dur == 0) max_dur <- 1L
