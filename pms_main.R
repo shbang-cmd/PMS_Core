@@ -1153,7 +1153,7 @@ repeat {
           # 라벨(너무 작은 구간은 생략)
           weight_bar_long$label <- paste0(
             as.character(weight_bar_long$Asset),
-            " (", sprintf("%.1f", weight_bar_long$Weight), "%)"
+            "(", sprintf("%.1f", weight_bar_long$Weight), "%)"
           )
           weight_bar_long$label[weight_bar_long$Weight < 3] <- ""
           
