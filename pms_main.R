@@ -700,21 +700,6 @@ repeat {
         today_tsum_stock <- sum(rt$한화평가금, na.rm = TRUE)  # 종목합
         today_tsum       <- today_tsum_stock + cash_like       # 총합(종목 + 현금성)
         
-        # 종목명 기반 버킷 집계 (필요시 키워드 보완)
-        # asset_SCHD <- rt %>% filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
-        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-        # 
-        # asset_QQQ  <- rt %>% filter(str_detect(종목명, "나스닥100|QQQ"), !str_detect(종목명, "TQQQ")) %>%
-        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-        # 
-        # asset_TQQQ <- rt %>% filter(str_detect(종목명, "TQQQ")) %>%
-        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-        # 
-        # asset_GLD  <- rt %>% filter(str_detect(종목명, "금현물")) %>%
-        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
-        # 
-        # asset_IEF  <- rt %>% filter(str_detect(종목명, "채권|국채")) %>%
-        #   summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>% pull(합계)
         asset_SCHD <- rt %>%
           filter(str_detect(종목명, "미국배당다우|SCHD")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
@@ -747,14 +732,6 @@ repeat {
           filter(str_detect(종목명, "KOFR|BIL|SGOV|머니마켓")) %>%
           summarise(합계 = sum(한화평가금, na.rm = TRUE)) %>%
           pull(합계) %>% tidyr::replace_na(0)
-        
-        # # NA 방탄
-        # asset_SCHD[is.na(asset_SCHD)] <- 0
-        # asset_QQQ[is.na(asset_QQQ)]   <- 0
-        # asset_TQQQ[is.na(asset_TQQQ)] <- 0
-        # asset_GLD[is.na(asset_GLD)]   <- 0
-        # asset_IEF[is.na(asset_IEF)]   <- 0
-        # asset_CASH[is.na(asset_CASH)] <- 0 # **"asset_CASH 데이터에서 비어있는 값(NA)들을 찾아내어 모두 숫자 0으로 채워 넣어라"**라는 명확한 전처리 명령
         
         # SPY_ETC는 "종목 중 나머지"로 정의
         asset_SPY_ETC <- today_tsum_stock - asset_SCHD - asset_QQQ - asset_TQQQ - asset_GLD - asset_IEF - asset_CASH
@@ -820,6 +797,81 @@ repeat {
           
           suppressWarnings(try(run_drift_rebal_signal(target_weights=weights, current_weights=current_weights, threshold=0.05), silent=TRUE))
           
+          
+          # 투자원금 대비 현대평가액을 환율과 함께 그래프로 표현
+          dd_simple <- dd %>%
+            select(Date, Sum, Invested)
+
+          suppressWarnings(
+            getSymbols("KRW=X", src = "yahoo", from = min(dd_simple$Date), to = max(dd_simple$Date))
+          )
+
+          # NA 제거 + 종가 추출
+          fx_xts <- na.omit(Cl(`KRW=X`))
+
+          fx_df <- data.frame(
+            Date = index(fx_xts),
+            FX   = as.numeric(fx_xts)
+          )
+
+          dd_simple <- dd_simple %>%
+            left_join(fx_df, by = "Date") %>%
+            arrange(Date) %>%
+            mutate(FX = zoo::na.locf(FX, na.rm = FALSE))  # 주말 보정
+
+          #dd_simple
+
+          # 막대용 long 변환(그래프 안에서만 사용)
+          dd_long <- dd_simple %>%
+            select(Date, Invested, Sum) %>%
+            pivot_longer(cols = c(Invested, Sum),
+                         names_to = "Type",
+                         values_to = "Amount")
+
+          # 스케일 배율(왼쪽축=백만원 기준)
+          scale_factor <- max(dd_long$Amount/1e6, na.rm = TRUE) /
+            max(dd_simple$FX, na.rm = TRUE)
+
+          s <- ggplot() +
+            # 투자원금/현재평가액: 막대
+            geom_col(
+              data = dd_long,
+              aes(x = Date, y = Amount/1e6, fill = Type),
+              position = "dodge",
+              alpha = 0.85
+            ) +
+            # 환율: 오른쪽 보조축(왼쪽축에 맞춰 스케일링해서 그림)
+            geom_line(
+              data = dd_simple,
+              aes(x = Date, y = FX * scale_factor, color = "환율"),
+              linewidth = 1.2,
+              linetype = "solid"
+            ) +
+            scale_y_continuous(
+              name = "금액(백만원)",
+              labels = label_comma(),
+              sec.axis = sec_axis(~ . / scale_factor, name = "환율(USD/KRW)")
+            ) +
+            scale_fill_manual(
+              values = c("Invested" = "blue", "Sum" = "red"),
+              labels = c("Invested" = "투자원금", "Sum" = "현재평가액")
+            ) +
+            scale_color_manual(values = c("환율" = "darkgreen")) +
+            labs(
+              title = "PMS : 투자원금 vs 현재평가액(막대) + 환율(보조축)",
+              x = "날짜",
+              fill = NULL,
+              color = NULL
+            ) +
+            theme_minimal(base_size = 13) +
+            theme(
+              legend.position = "top",
+              axis.title.y.right = element_text(color = "darkgreen")
+            )
+
+          print(s)
+          
+          
           # ---------- DT 출력 (캡션 HTML) ----------
           today_sum <- tail(dd$Sum, 1)
           yesterday_sum <- tail(dd$Sum, 2)[1]
@@ -861,6 +913,7 @@ repeat {
                           fontWeight=styleInterval(0, c("bold","normal")))
           )
           
+          
           # ---------- label_text 화면에 표시할 글자 ----------
           label_text <- paste0(
             "오늘평가액 : ", comma(round(sum_value, 0)), "원   ",
@@ -881,22 +934,6 @@ repeat {
             ifelse((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) >= 0, "+", ""),
             round((tail(dd$Sum, 2)[2] - tail(dd$Sum, 2)[1]) * 100 / tail(dd$Sum, 1), 2),
             "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
-            # "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(목표(억)) = ",
-            # round(today_tsum * as.numeric(weights['SPY_ETC']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['SCHD']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['QQQ']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['TQQQ']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['GOLD']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['IEF']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(weights['CASH']/1e8), 1), "\n",
-            # "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(현재(억)) = ",
-            # round(today_tsum * as.numeric(current_weights['SPY_ETC']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['SCHD']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['QQQ']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['TQQQ']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['GOLD']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['IEF']/1e8), 1), " : ",
-            # round(today_tsum * as.numeric(current_weights['CASH']/1e8), 1), "\n"
             "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(목표(억)) = ",
             sprintf("%.1f", today_tsum * as.numeric(weights['SPY_ETC']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(weights['QQQ']/1e8)), " : ",
