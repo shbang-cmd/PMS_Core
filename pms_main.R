@@ -32,7 +32,7 @@ pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
          "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
-         "dplyr", "writexl")
+         "dplyr", "writexl", "purrr")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
@@ -44,7 +44,7 @@ library(patchwork); library(treemap); library(DT)
 library(stringr); library(PerformanceAnalytics)
 library(zoo); library(tidyr); library(quantmod); library(xts)
 library(rugarch); library(htmltools); library(tidyverse)
-library(writexl)
+library(writexl); library(purrr)
 
 # -------------------------------------------------
 # Sunday check : 일요일이면 바로 종료
@@ -288,7 +288,7 @@ make_gemini_prompt_pms <- function(
         정량 수치 없이 거시적 분위기를 정성적으로 요약할 수 있습니다.
       - 특정 지수 수치, 방향성 예측, 투자 판단은 금지합니다.
       
-      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고, 오늘 환화평가금과의 관계와 아래의 S&P500지수 일간등락의 관계를 함께 분석할 것
+      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고, 오늘 환화평가금과의 관계와 아래의 S&P500지수 일간등락의 관계를 함께 분석해줘줘
 
       9)  마지막 끝낼 때 [오늘의 유머]라고 말머리를 달고 아주 랜덤하게 주식 유머 하나만 짧게 해줘
       
@@ -802,24 +802,34 @@ repeat {
           dd_simple <- dd %>%
             select(Date, Sum, Invested)
 
-          suppressWarnings(
-            getSymbols("KRW=X", src = "yahoo", from = min(dd_simple$Date), to = max(dd_simple$Date))
-          )
-
-          # NA 제거 + 종가 추출
-          fx_xts <- na.omit(Cl(`KRW=X`))
-
+          # quantmod패키지의 getSymbols()함수를 안쓰도록 임시로 막음(2026.03.19)
+          # suppressWarnings(
+          #   getSymbols("KRW=X", src = "yahoo", from = min(dd_simple$Date), to = max(dd_simple$Date))
+          # )
+          # 
+          # # NA 제거 + 종가 추출
+          # fx_xts <- na.omit(Cl(`KRW=X`))
+          # 
+          # fx_df <- data.frame(
+          #   Date = index(fx_xts),
+          #   FX   = as.numeric(fx_xts)
+          # )
+          # 
+          
+          
+          # getSymbols()함수 이용불가로 인해 getSymbols()함수를 안쓰고 그냥 최근 환율을 가져오도록 임시로 만듦(2026.03.19)
           fx_df <- data.frame(
             Date = index(fx_xts),
-            FX   = as.numeric(fx_xts)
+            FX   = exchange_rate
           )
 
           dd_simple <- dd_simple %>%
             left_join(fx_df, by = "Date") %>%
             arrange(Date) %>%
             mutate(FX = zoo::na.locf(FX, na.rm = FALSE))  # 주말 보정
+          
 
-          #dd_simple
+          
 
           # 막대용 long 변환(그래프 안에서만 사용)
           dd_long <- dd_simple %>%
