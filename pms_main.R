@@ -946,6 +946,7 @@ repeat {
             "%)  1일 평균 증가액 : ", comma(round(slope_per_day * 10000000, 0)), "(원/일)\n",
             "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(목표(억)) = ",
             sprintf("%.1f", today_tsum * as.numeric(weights['SPY_ETC']/1e8)), " : ",
+            sprintf("%.1f", today_tsum * as.numeric(weights['SCHD']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(weights['QQQ']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(weights['TQQQ']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(weights['GOLD']/1e8)), " : ",
@@ -954,6 +955,7 @@ repeat {
             
             "SPY_ETC:SCHD:QQQ:TQQQ:GOLD:IEF:CASH(현재(억)) = ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['SPY_ETC']/1e8)), " : ",
+            sprintf("%.1f", today_tsum * as.numeric(current_weights['SCHD']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['QQQ']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['TQQQ']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['GOLD']/1e8)), " : ",
