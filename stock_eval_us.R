@@ -70,52 +70,82 @@ profits <- NA
 # }
 
 
-# 네이버 크롤링으로 미국주식 주가 받아오는 버전
-get_us_price <- function(ticker) {
-  library(httr)
-  library(jsonlite)
+# # 네이버 크롤링으로 미국주식 주가 받아오는 버전
+# get_us_price <- function(ticker) {
+#   library(httr)
+#   library(jsonlite)
+#   
+#   url <- paste0(
+#     "https://query1.finance.yahoo.com/v8/finance/chart/",
+#     URLencode(ticker),
+#     "?range=1d&interval=1d&includePrePost=false"
+#   )
+#   
+#   res <- GET(
+#     url,
+#     user_agent("Mozilla/5.0"),
+#     config(
+#       ssl_verifypeer = 0L,
+#       ssl_verifyhost = 0L
+#     )
+#   )
+#   
+#   if (status_code(res) != 200) {
+#     stop("요청 실패: 상태코드 ", status_code(res))
+#   }
+#   
+#   txt <- content(res, as = "text", encoding = "UTF-8")
+#   obj <- fromJSON(txt, simplifyDataFrame = FALSE)
+#   
+#   result <- obj$chart$result
+#   if (is.null(result) || length(result) == 0) {
+#     stop("티커를 찾을 수 없습니다: ", ticker)
+#   }
+#   
+#   meta <- result[[1]]$meta
+#   
+#   # 우선순위: regularMarketPrice -> previousClose
+#   price <- meta$regularMarketPrice
+#   if (is.null(price) || is.na(price)) {
+#     price <- meta$previousClose
+#   }
+#   
+#   if (is.null(price) || is.na(price)) {
+#     stop("현재가를 가져올 수 없습니다: ", ticker)
+#   }
+#   
+#   return(as.numeric(price))
+# }
+
+
+# SSL에러로 인해 웹조회방식으로 바꿈(2026.5.11)
+get_us_price <- function(symbol) {
   
   url <- paste0(
     "https://query1.finance.yahoo.com/v8/finance/chart/",
-    URLencode(ticker),
-    "?range=1d&interval=1d&includePrePost=false"
+    symbol
   )
   
-  res <- GET(
+  res <- httr::GET(
     url,
-    user_agent("Mozilla/5.0"),
-    config(
-      ssl_verifypeer = 0L,
-      ssl_verifyhost = 0L
-    )
+    httr::add_headers(
+      "User-Agent" = "Mozilla/5.0"
+    ),
+    httr::config(
+      ssl_verifypeer = FALSE,
+      ssl_verifyhost = FALSE
+    ),
+    httr::timeout(10)
   )
   
-  if (status_code(res) != 200) {
-    stop("요청 실패: 상태코드 ", status_code(res))
-  }
+  txt <- httr::content(res, as = "text", encoding = "UTF-8")
+  data <- jsonlite::fromJSON(txt, simplifyVector = FALSE)
   
-  txt <- content(res, as = "text", encoding = "UTF-8")
-  obj <- fromJSON(txt, simplifyDataFrame = FALSE)
-  
-  result <- obj$chart$result
-  if (is.null(result) || length(result) == 0) {
-    stop("티커를 찾을 수 없습니다: ", ticker)
-  }
-  
-  meta <- result[[1]]$meta
-  
-  # 우선순위: regularMarketPrice -> previousClose
-  price <- meta$regularMarketPrice
-  if (is.null(price) || is.na(price)) {
-    price <- meta$previousClose
-  }
-  
-  if (is.null(price) || is.na(price)) {
-    stop("현재가를 가져올 수 없습니다: ", ticker)
-  }
+  price <- data$chart$result[[1]]$meta$regularMarketPrice
   
   return(as.numeric(price))
 }
+
 
 
 for (i in 1:nrow(data_en)) {

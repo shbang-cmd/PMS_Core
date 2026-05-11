@@ -665,10 +665,33 @@ repeat {
           data_prev_fn <- data.frame(종목번호=character(), 보유증권사=character(), 전일한화평가금=numeric())
         }
         
+        # join_stock_data <- function(today_df, prev_df) {
+        #   today_df %>%
+        #     distinct(종목번호, 보유증권사, .keep_all = TRUE) %>%
+        #     left_join(prev_df, by = c("종목번호", "보유증권사")) %>%
+        #     mutate(
+        #       한화평가금 = trunc(한화평가금),
+        #       전일한화평가금 = trunc(전일한화평가금),
+        #       전일대비 = trunc(한화평가금 - 전일한화평가금),
+        #       전일대비율 = if_else(
+        #         is.na(전일한화평가금) | 전일한화평가금 == 0,
+        #         NA_character_,
+        #         sprintf("%.2f", round((한화평가금 - 전일한화평가금) / 전일한화평가금 * 100, 2))
+        #       ),
+        #       비중 = sprintf("%.2f", round(한화평가금 / sum(한화평가금, na.rm = TRUE) * 100, 2))
+        #     ) %>%
+        #     arrange(desc(한화평가금))
+        # }
         join_stock_data <- function(today_df, prev_df) {
+          
+          prev_df2 <- prev_df %>%
+            group_by(종목번호, 보유증권사) %>%
+            slice_max(order_by = 전일한화평가금, n = 1, with_ties = FALSE) %>%  # 중복레코드 2개이상시 큰 잔액만 남김
+            ungroup()
+          
           today_df %>%
             distinct(종목번호, 보유증권사, .keep_all = TRUE) %>%
-            left_join(prev_df, by = c("종목번호", "보유증권사")) %>%
+            left_join(prev_df2, by = c("종목번호", "보유증권사")) %>%
             mutate(
               한화평가금 = trunc(한화평가금),
               전일한화평가금 = trunc(전일한화평가금),
@@ -897,10 +920,10 @@ repeat {
             "(", week_kor[as.numeric(format(Sys.Date(), "%w")) + 1], ") ",
             format(Sys.time(), "%H시 %M분   "),
             "<span style='font-size:100%;font-weight:bold;color:black;margin-right:15px;'>",
-            "한화평가금합계 ", scales::comma(sum_value), "원</span>",
-            "<span style='font-size:100%;font-weight:bold;color:", diff_color, ";'>",
-            "(전일대비 ", diff_sign, scales::comma(diff_value), "원, ",
-            diff_sign, sprintf("%.2f%%", diff_pct), ")</span></div>"
+            "한화평가금합계 ", scales::comma(sum_value/1e3), "천원</span>",
+            "<span style='font-size:80%;font-weight:bold;color:", diff_color, ";'>",
+            "(전일대비 ", diff_sign, scales::comma(diff_value/1e3), "천원, ",
+            diff_sign, sprintf("%.2f%%, ", diff_pct), exchange_rate, "원/달러,", exchange_diff, ")</span></div>"
           )
           
           print(
@@ -1526,7 +1549,6 @@ repeat {
   if (!REPEAT_FLAG) break
   
   
-  
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
   print(
          rt %>%
@@ -1558,9 +1580,10 @@ repeat {
                  ) %>%
                group_by(종목그룹) %>%
                summarise(
-                     총평가금 = sum(한화평가금),
-                     총매수금 = sum(총매수금),
-                     총수익금 = sum(총수익금),
+                     총평가금 = sum(한화평가금) / 1e3,
+                     총매수금 = sum(총매수금) / 1e3,
+                     총수익금 = sum(총수익금) / 1e3,
+                     전일대비 = sum(전일대비) / 1e3,
                      .groups = "drop"
                  ) %>%
                mutate(
@@ -1568,18 +1591,15 @@ repeat {
                      비중   = round(총평가금 / sum(총평가금) * 100, 2)
                  ) %>%
                filter(비중 >= 1) %>%
-               arrange(desc(총평가금)) %>%
-               rename(종목명 = 종목그룹),
-         n = Inf
-     )
+               # arrange(desc(총평가금)) %>%
+               # rename(종목명 = 종목그룹),
+               arrange(desc(총평가금)),
+         n = Inf)
+                           
+                             
   
-  
-  
-  
-  
-  
-  wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
-  Sys.sleep(wait_min * 60)
+    wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
+    Sys.sleep(wait_min * 60)
 }
 
 # 배치파일로 실행될때는 강제 종료
