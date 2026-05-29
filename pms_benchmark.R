@@ -24,7 +24,7 @@ con <- dbConnect(
   RSQLite::SQLite(),
   db_path
 )
-on.exit(dbDisconnect(con), add = TRUE)  
+# on.exit(dbDisconnect(con), add = TRUE)  
 
 if (!"stock_daily_prices" %in% dbListTables(con)) {
   cat("stock_daily_prices 테이블이 없어 새로 생성합니다.\n")
