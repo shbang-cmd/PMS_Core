@@ -107,6 +107,12 @@ min_days_for_risk <- 100
 font_add(family = "malgun", regular = "C:\\Windows\\Fonts\\malgun.ttf")
 showtext_auto()
 
+# 환율 정보 변후 초기화
+#spx <- NA
+spx_val <- if(is.list(spx)) spx$spx_value else "(미수집)" 
+spx_diff <- if(is.list(spx)) spx$spx_diff_label else "-" 
+spx_pct <- if(is.list(spx)) spx$spx_pct else NA_real_
+
 # =========================================================
 # 유틸: TWR 계산 컬럼 추가
 # =========================================================
@@ -215,7 +221,7 @@ make_gemini_prompt_pms <- function(
   risk_txt <- paste0(
     "- 현재 드로다운(DD_now): ", fmt_pct(dd_now, acc = 0.01), "\n",
     "- 최대낙폭(MDD(%)): ", round(pa_mdd*100, 2), "\n",
-    "- CVaR(95%, 원): ", comma(round(cvar_amt, 0))
+    "- CVaR(95%, 원): ", fmt_cvar_amt(cvar_amt)
   )
   
   # 프로그래밍도 중요하지만 Prompt engineering도 중요
@@ -333,6 +339,78 @@ make_badge_text <- function(sum_xts, GLD_MODE) {
   }
 }
 
+# 전일 파일 찾기
+get_prev_file <- function(prefix = "output_stock_", ext = "xlsx") {
+  pattern <- paste0("^", prefix, "\\d{4}-\\d{2}-\\d{2}\\.", ext, "$")
+  files <- dir(pattern = pattern)
+  if (length(files) == 0) return(NA)
+  dates <- as.Date(sub(paste0(prefix, "(\\d{4}-\\d{2}-\\d{2})\\.", ext), "\\1", files))
+  valid_idx <- which(dates < Sys.Date())
+  if (length(valid_idx) == 0) return(NA)
+  files[which.max(dates[valid_idx])]
+}
+
+join_stock_data <- function(today_df, prev_df) {
+  today_df %>%
+    distinct(종목번호, 보유증권사, .keep_all = TRUE) %>%
+    left_join(prev_df, by = c("종목번호", "보유증권사")) %>%
+    mutate(
+      한화평가금 = trunc(한화평가금),
+      전일한화평가금 = trunc(전일한화평가금),
+      전일대비 = trunc(한화평가금 - 전일한화평가금),
+      전일대비율 = if_else(
+        is.na(전일한화평가금) | 전일한화평가금 == 0,
+        NA_character_,
+        sprintf("%.2f", round((한화평가금 - 전일한화평가금) / 전일한화평가금 * 100, 2))
+      ),
+      비중 = sprintf("%.2f", round(한화평가금 / sum(한화평가금, na.rm = TRUE) * 100, 2))
+    ) %>%
+    arrange(desc(한화평가금))
+}
+
+
+get_naver_usdkrw <- function(start_date, end_date) {  # 네이버 금융에서 특정일부터 특정일까지 환율조회
+  start_date <- ymd(start_date)
+  end_date   <- ymd(end_date)
+  
+  result <- data.frame()
+  page <- 1
+  
+  repeat {
+    url <- paste0(
+      "https://finance.naver.com/marketindex/exchangeDailyQuote.naver?",
+      "marketindexCd=FX_USDKRW&page=", page
+    )
+    
+    tbl <- read_html(url, encoding = "EUC-KR") %>%
+      html_table(fill = TRUE) %>%
+      .[[1]]
+    
+    names(tbl) <- c("date", "rate", "change", "buy_cash", "sell_cash", 
+                    "send", "receive", "tc_buy", "foreign_check")
+    
+    tbl <- tbl %>%
+      filter(!is.na(date), str_detect(date, "\\d{4}\\.\\d{2}\\.\\d{2}")) %>%
+      mutate(
+        date = ymd(str_replace_all(date, "\\.", "-")),
+        rate = as.numeric(str_replace_all(rate, ",", ""))
+      ) %>%
+      select(date, rate)
+    
+    result <- bind_rows(result, tbl)
+    
+    if (min(tbl$date) < start_date) break
+    
+    page <- page + 1
+    Sys.sleep(0.2)
+  }
+  
+  result %>%
+    filter(date >= start_date, date <= end_date) %>%
+    arrange(date)
+}
+
+
 PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
 UPDATE_EVERY_SEC <- 10
 last_update_time <- Sys.time() - 9999
@@ -415,7 +493,7 @@ repeat {
       } else {
         updated_data <- result
       }
-
+      
       write_csv(updated_data, output_file)
       
       # is_initial_mode <- (nrow(updated_data) < min_days_for_risk)
@@ -629,23 +707,21 @@ repeat {
           paste0(substr(dt_fn$종목명, 1, 10), "\n", substr(dt_fn$종목명, 11, 999)),
           dt_fn$종목명
         )
-        treemap(dt_fn, index="종목명_tm", vSize="한화평가금", title="구성비율 트리맵")
+        treemap(dt_fn, 
+                index="종목명_tm", 
+                vSize="한화평가금", 
+                title="종목구성비율 트리맵",
+                palette = "Set3",
+                border.col = "white",
+                inflate.labels = TRUE,
+                lowerbound.cex.labels = 0.5)
         showtext_auto()
+        
         
         # 1일 평균 증가액
         fit <- lm(sum_left ~ as.numeric(dd_plot_base$Date), data = dd_plot_base)
         slope_per_day <- coef(fit)[2]
         
-        # 전일 파일 찾기
-        get_prev_file <- function(prefix = "output_stock_", ext = "xlsx") {
-          pattern <- paste0("^", prefix, "\\d{4}-\\d{2}-\\d{2}\\.", ext, "$")
-          files <- dir(pattern = pattern)
-          if (length(files) == 0) return(NA)
-          dates <- as.Date(sub(paste0(prefix, "(\\d{4}-\\d{2}-\\d{2})\\.", ext), "\\1", files))
-          valid_idx <- which(dates < Sys.Date())
-          if (length(valid_idx) == 0) return(NA)
-          files[which.max(dates[valid_idx])]
-        }
         
         prev_ko_file <- get_prev_file("output_stock_")
         prev_en_file <- get_prev_file("output_stock_us_")
@@ -665,46 +741,6 @@ repeat {
           data_prev_fn <- data.frame(종목번호=character(), 보유증권사=character(), 전일한화평가금=numeric())
         }
         
-        # join_stock_data <- function(today_df, prev_df) {
-        #   today_df %>%
-        #     distinct(종목번호, 보유증권사, .keep_all = TRUE) %>%
-        #     left_join(prev_df, by = c("종목번호", "보유증권사")) %>%
-        #     mutate(
-        #       한화평가금 = trunc(한화평가금),
-        #       전일한화평가금 = trunc(전일한화평가금),
-        #       전일대비 = trunc(한화평가금 - 전일한화평가금),
-        #       전일대비율 = if_else(
-        #         is.na(전일한화평가금) | 전일한화평가금 == 0,
-        #         NA_character_,
-        #         sprintf("%.2f", round((한화평가금 - 전일한화평가금) / 전일한화평가금 * 100, 2))
-        #       ),
-        #       비중 = sprintf("%.2f", round(한화평가금 / sum(한화평가금, na.rm = TRUE) * 100, 2))
-        #     ) %>%
-        #     arrange(desc(한화평가금))
-        # }
-        join_stock_data <- function(today_df, prev_df) {
-          
-          prev_df2 <- prev_df %>%
-            group_by(종목번호, 보유증권사) %>%
-            slice_max(order_by = 전일한화평가금, n = 1, with_ties = FALSE) %>%  # 중복레코드 2개이상시 큰 잔액만 남김
-            ungroup()
-          
-          today_df %>%
-            distinct(종목번호, 보유증권사, .keep_all = TRUE) %>%
-            left_join(prev_df2, by = c("종목번호", "보유증권사")) %>%
-            mutate(
-              한화평가금 = trunc(한화평가금),
-              전일한화평가금 = trunc(전일한화평가금),
-              전일대비 = trunc(한화평가금 - 전일한화평가금),
-              전일대비율 = if_else(
-                is.na(전일한화평가금) | 전일한화평가금 == 0,
-                NA_character_,
-                sprintf("%.2f", round((한화평가금 - 전일한화평가금) / 전일한화평가금 * 100, 2))
-              ),
-              비중 = sprintf("%.2f", round(한화평가금 / sum(한화평가금, na.rm = TRUE) * 100, 2))
-            ) %>%
-            arrange(desc(한화평가금))
-        }
         
         rt <- join_stock_data(dt_fn, data_prev_fn) %>%
           mutate(
@@ -821,77 +857,125 @@ repeat {
           suppressWarnings(try(run_drift_rebal_signal(target_weights=weights, current_weights=current_weights, threshold=0.05), silent=TRUE))
           
           
-          # 투자원금 대비 현대평가액을 환율과 함께 그래프로 표현
+          # 투자원금 대비 현재평가액을 환율과 함께 그래프로 표현
           dd_simple <- dd %>%
-            select(Date, Sum, Invested)
-
-          # quantmod패키지의 getSymbols()함수를 안쓰도록 임시로 막음(2026.03.19)
-          # suppressWarnings(
-          #   getSymbols("KRW=X", src = "yahoo", from = min(dd_simple$Date), to = max(dd_simple$Date))
-          # )
-          # 
-          # # NA 제거 + 종가 추출
-          # fx_xts <- na.omit(Cl(`KRW=X`))
-          # 
-          # fx_df <- data.frame(
-          #   Date = index(fx_xts),
-          #   FX   = as.numeric(fx_xts)
-          # )
-          # 
+            select(Date, Sum, Invested) %>%
+            mutate(Date = as.Date(Date))
           
-          
-          # getSymbols()함수 이용불가로 인해 getSymbols()함수를 안쓰고 그냥 최근 환율을 가져오도록 임시로 만듦(2026.03.19)
-          fx_df <- data.frame(
-            Date = index(fx_xts),
-            FX   = exchange_rate
+          # 네이버 원/달러 환율 조회
+          usdkrw <- get_naver_usdkrw(
+            start_date = min(dd_simple$Date),
+            end_date   = max(dd_simple$Date)
           )
-
+          
+          # 환율 데이터 정리
+          fx_df <- usdkrw %>%
+            rename(
+              Date = date,
+              FX = rate
+            ) %>%
+            mutate(Date = as.Date(Date))
+          
+          # PMS 데이터와 환율 결합
           dd_simple <- dd_simple %>%
             left_join(fx_df, by = "Date") %>%
             arrange(Date) %>%
-            mutate(FX = zoo::na.locf(FX, na.rm = FALSE))  # 주말 보정
+            mutate(FX = zoo::na.locf(FX, na.rm = FALSE))
           
-
-          
-
-          # 막대용 long 변환(그래프 안에서만 사용)
+          # 막대용 long 변환
           dd_long <- dd_simple %>%
             select(Date, Invested, Sum) %>%
-            pivot_longer(cols = c(Invested, Sum),
-                         names_to = "Type",
-                         values_to = "Amount")
-
-          # 스케일 배율(왼쪽축=백만원 기준)
-          scale_factor <- max(dd_long$Amount/1e6, na.rm = TRUE) /
+            pivot_longer(
+              cols = c(Invested, Sum),
+              names_to = "Type",
+              values_to = "Amount"
+            )
+          
+          # 스케일 배율
+          scale_factor <- max(dd_long$Amount / 1e6, na.rm = TRUE) /
             max(dd_simple$FX, na.rm = TRUE)
-
+          
+          fx_month_start <- dd_simple %>%
+            filter(!is.na(FX)) %>%
+            mutate(month = format(Date, "%Y-%m")) %>%
+            group_by(month) %>%
+            slice_min(Date, n = 1, with_ties = FALSE) %>%
+            ungroup()
+          
           s <- ggplot() +
-            # 투자원금/현재평가액: 막대
             geom_col(
               data = dd_long,
-              aes(x = Date, y = Amount/1e6, fill = Type),
+              aes(x = Date, y = Amount / 1e6, fill = Type),
               position = "dodge",
               alpha = 0.85
             ) +
-            # 환율: 오른쪽 보조축(왼쪽축에 맞춰 스케일링해서 그림)
             geom_line(
-              data = dd_simple,
+              data = dd_simple %>% 
+                filter(!is.na(FX)),
               aes(x = Date, y = FX * scale_factor, color = "환율"),
-              linewidth = 1.2,
-              linetype = "solid"
+              linewidth = 1.2
+            ) +
+            annotate(
+              "text",
+              x = max(dd_simple$Date, na.rm = TRUE),
+              y = tail(na.omit(dd_simple$FX), 1) * scale_factor,
+              label = paste0(
+                "오늘 환율 : ",
+                round(tail(na.omit(dd_simple$FX), 1), 1)
+              ),
+              hjust = 1.1,
+              vjust = -0.5,
+              color = "darkgreen",
+              size = 4,
+              fontface = "bold"
+            ) +
+            geom_hline(
+              yintercept = mean(fx_df$FX, na.rm = TRUE) * scale_factor,
+              linetype = "dashed",
+              color = "gray50",
+              alpha = 0.4,
+              linewidth = 0.8
+            ) +
+            geom_text(
+              data = fx_month_start %>% 
+                filter(!is.na(FX)),
+              aes(
+                x = Date,
+                y = FX * scale_factor,
+                label = round(FX, 1)
+              ),
+              vjust = -0.3,
+              size = 3,
+              color = "darkgreen"
             ) +
             scale_y_continuous(
               name = "금액(백만원)",
               labels = label_comma(),
-              sec.axis = sec_axis(~ . / scale_factor, name = "환율(USD/KRW)")
+              sec.axis = sec_axis(
+                ~ . / scale_factor,
+                name = "환율(USD/KRW)"
+              )
             ) +
             scale_fill_manual(
-              values = c("Invested" = "blue", "Sum" = "red"),
-              labels = c("Invested" = "투자원금", "Sum" = "현재평가액")
+              values = c(
+                "Invested" = "blue",
+                "Sum" = "red"
+              ),
+              labels = c(
+                "Invested" = "투자원금",
+                "Sum" = "현재평가액"
+              )
             ) +
-            scale_color_manual(values = c("환율" = "darkgreen")) +
+            scale_color_manual(
+              values = c("환율" = "darkgreen")
+            ) +
             labs(
-              title = "PMS : 투자원금 vs 현재평가액(막대) + 환율(보조축)",
+              title = paste0(
+                "PMS : 투자원금 vs 현재평가액(막대) + 원/달러 환율 : ",
+                round(tail(fx_df$FX, 1), 1),
+                "  |  평균환율(수평점선) : ",
+                round(mean(fx_df$FX, na.rm = TRUE), 1)
+              ),
               x = "날짜",
               fill = NULL,
               color = NULL
@@ -899,9 +983,10 @@ repeat {
             theme_minimal(base_size = 13) +
             theme(
               legend.position = "top",
-              axis.title.y.right = element_text(color = "darkgreen")
+              axis.title.y.right = element_text(color = "darkgreen"),
+              axis.text.y.right = element_text(color = "darkgreen")
             )
-
+          
           print(s)
           
           
@@ -920,9 +1005,9 @@ repeat {
             "(", week_kor[as.numeric(format(Sys.Date(), "%w")) + 1], ") ",
             format(Sys.time(), "%H시 %M분   "),
             "<span style='font-size:100%;font-weight:bold;color:black;margin-right:15px;'>",
-            "한화평가금합계 ", scales::comma(sum_value/1e3), "천원</span>",
-            "<span style='font-size:80%;font-weight:bold;color:", diff_color, ";'>",
-            "(전일대비 ", diff_sign, scales::comma(diff_value/1e3), "천원, ",
+            "한화평가금합계 ", scales::comma(sum_value), "원</span>",
+            "<span style='font-size:90%;font-weight:bold;color:", diff_color, ";'>",
+            "(전일대비 ", diff_sign, scales::comma(diff_value), "원, ",
             diff_sign, sprintf("%.2f%%, ", diff_pct), exchange_rate, "원/달러,", exchange_diff, ")</span></div>"
           )
           
@@ -990,51 +1075,102 @@ repeat {
           common_date_range <- range(dd_plot_base$Date, na.rm = TRUE)
           common_date_range[2] <- common_date_range[2] + 2
           
+          
+          suppressWarnings(source("pms_benchmark.R"))  # S&P500, NASDAQ100과 벤치마크 비교 : 한화면에 벤치마크 지수와 비교해줌
+          
           # ---------- 상단 플롯(p) ----------
+          month_start_label <- dd_plot_base %>%
+            filter(!is.na(Sum)) %>%
+            mutate(
+              month = format(Date, "%Y-%m"),
+              sum_left = Sum / 1e7
+            ) %>%
+            group_by(month) %>%
+            slice_min(Date, n = 1, with_ties = FALSE) %>%
+            ungroup()
+          
           p <- ggplot(dd_plot_base, aes(x = Date)) +
             geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
             geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
-            geom_smooth(aes(y = sum_left), method = "lm", formula = y ~ x, se = FALSE,
-                        color = "orange", linetype = "dashed", linewidth = 1) +
+            geom_smooth(
+              aes(y = sum_left),
+              method = "lm",
+              formula = y ~ x,
+              se = FALSE,
+              color = "orange",
+              linetype = "dashed",
+              linewidth = 1
+            ) +
             geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
             geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
             geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
-            scale_color_gradient( # 손익별 색깔
-              low  = "#D55E00",   # 선명한 주황(손실)
-              high = "#0072B2",   # 선명한 파랑(이익)
-              name="손익\n(단위:\n천만원)") +
-            scale_x_date(limits = common_date_range,
-                         date_breaks = "2 months",
-                         labels = scales::label_date_short(),
-                         expand = c(0, 0)) +
-            scale_y_continuous(name = "보유합계(천만원)",
-                               sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")) +
-            labs(title = plot_title,
-                 subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
-                 x = NULL, y = NULL) +
+            scale_color_gradient(
+              low  = "#D55E00",
+              high = "#0072B2",
+              name = "손익\n(단위:\n천만원)"
+            ) +
+            scale_x_date(
+              limits = common_date_range,
+              date_breaks = "2 months",
+              labels = scales::label_date_short(),
+              expand = c(0, 0)
+            ) +
+            scale_y_continuous(
+              name = "보유합계(천만원)",
+              sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
+            ) +
+            labs(
+              title = plot_title,
+              subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
+              x = NULL,
+              y = NULL
+            ) +
             theme_minimal(base_size = 13) +
-            theme(plot.title.position = "plot",
-                  plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-                  plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
-                  axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
-                  # ✅ 범례 글자 크기 조절
-                  legend.title = element_text(size = 9),
-                  legend.text  = element_text(size = 8)
-                  ) +
+            theme(
+              plot.title.position = "plot",
+              plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+              plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
+              axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
+              legend.title = element_text(size = 9),
+              legend.text  = element_text(size = 8)
+            ) +
             coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
-            annotate("text",
-                     x = min(dd_plot_base$Date, na.rm = TRUE),
-                     y = max(sum_left, na.rm = TRUE),
-                     label = label_text,
-                     hjust = 0, vjust = 1,
-                     size = 3.5, color = "black") +
-            annotate("label",
-                     x = max(dd_plot_base$Date, na.rm = TRUE),
-                     y = min(sum_left, na.rm = TRUE) * 1.02,
-                     label = badge_text,
-                     hjust = 1, vjust = 0,
-                     size = 5.5, fontface = "bold",
-                     fill = badge_color, color = "white")
+            annotate(
+              "text",
+              x = min(dd_plot_base$Date, na.rm = TRUE),
+              y = max(sum_left, na.rm = TRUE),
+              label = label_text,
+              hjust = 0,
+              vjust = 1,
+              size = 3.5,
+              color = "black"
+            ) +
+            annotate(
+              "label",
+              x = max(dd_plot_base$Date, na.rm = TRUE),
+              y = min(sum_left, na.rm = TRUE) * 1.02,
+              label = badge_text,
+              hjust = 1,
+              vjust = 0,
+              size = 5.5,
+              fontface = "bold",
+              fill = badge_color,
+              color = "white"
+            ) +
+            geom_text(
+              data = month_start_label,
+              aes(
+                x = Date,
+                y = sum_left,
+                label = paste0(round(Sum / 1e8, 1), "억")
+              ),
+              vjust = 4, # 양수이면 아래쪽으로 숫자 표시, 음수면 위쪽으로 표시
+              size = 3,
+              color = "black",
+              fontface = "bold",
+              inherit.aes = FALSE
+            ) 
+          
           
           # ---------- 중단 누적수익(막대)+수익률(선) ----------
           dd_mid <- dd_plot_base %>%
@@ -1266,7 +1402,6 @@ repeat {
               plot.margin = margin(2, 10, 2, 10)
             )
           
-
           
           gauge_share_plot <- function(cur_val, max_val,
                                        title = "Gauge",
@@ -1377,7 +1512,6 @@ repeat {
             p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
           }
           
-          
           gauge_with_left_title <- function(gauge_plot, title_left,
                                             left_width = 0.55, right_width = 1.45) {
             p_left <- ggplot2::ggplot() +
@@ -1393,10 +1527,7 @@ repeat {
               patchwork::plot_layout(widths = c(left_width, right_width))
           }
           
-
-          
-          build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum,
-                                           ui_win = 63) {
+          build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63) {
             
             cur_sum_amt <- as.numeric(today_sum)
             
@@ -1474,7 +1605,6 @@ repeat {
             patchwork::wrap_plots(g1, g2, g3, g4, nrow = 1)
           }
           
-          
           g_row <- build_risk_gauge_row(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63)
           
           
@@ -1485,7 +1615,6 @@ repeat {
             combined_plot <- (p / p_mid / p_weight_bar / g_row) +
               patchwork::plot_layout(heights = c(2.2, 1, 0.40, 0.65))
           }
-          
           
           suppressMessages(print(combined_plot))
           
@@ -1551,55 +1680,54 @@ repeat {
   
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
   print(
-         rt %>%
-               mutate(
-                     종목그룹 = case_when(
-                           # 나스닥100
-                             grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "나스닥100ETF",
-                           
-                             # S&P500
-                             grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "미국S&P500ETF",
-                           
-                             # 채권형 ETF
-                             grepl("KODEX종합채권액티브ETF", 종목명) |
-                                 grepl("KODEX미국30년국채액티브", 종목명) |
-                                 grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
-                                 grepl("TIGER미국테크TOP10채권혼합", 종목명) |
-                                 grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "채권형ETF",
-                           
-                             # 현금성 ETF ⭐
-                             grepl("KODEX 머니마켓액티브", 종목명) |
-                                 grepl("TIGER KOFR금리액티브", 종목명) |
-                                 grepl("RISE KOFR금리액티브", 종목명) |
-                                 grepl("^BIL$", 종목명) |
-                                 grepl("^SGOV$", 종목명) ~ "현금성ETF",
-                           
-                             # 기타
-                             TRUE ~ 종목명
-                       )
-                 ) %>%
-               group_by(종목그룹) %>%
-               summarise(
-                     총평가금 = sum(한화평가금) / 1e3,
-                     총매수금 = sum(총매수금) / 1e3,
-                     총수익금 = sum(총수익금) / 1e3,
-                     전일대비 = sum(전일대비) / 1e3,
-                     .groups = "drop"
-                 ) %>%
-               mutate(
-                     수익률 = round(총수익금 / 총매수금 * 100, 2),
-                     비중   = round(총평가금 / sum(총평가금) * 100, 2)
-                 ) %>%
-               filter(비중 >= 1) %>%
-               # arrange(desc(총평가금)) %>%
-               # rename(종목명 = 종목그룹),
-               arrange(desc(총평가금)),
-         n = Inf)
-                           
-                             
+    rt %>%
+      mutate(
+        종목그룹 = case_when(
+          # 나스닥100
+          grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "나스닥100ETF",
+          
+          # S&P500
+          grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "미국S&P500ETF",
+          
+          # 채권형 ETF
+          grepl("KODEX종합채권액티브ETF", 종목명) |
+            grepl("KODEX미국30년국채액티브", 종목명) |
+            grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
+            grepl("TIGER미국테크TOP10채권혼합", 종목명) |
+            grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "채권형ETF",
+          
+          # 현금성 ETF ⭐
+          grepl("KODEX 머니마켓액티브", 종목명) |
+            grepl("TIGER KOFR금리액티브", 종목명) |
+            grepl("RISE KOFR금리액티브", 종목명) |
+            grepl("^BIL$", 종목명) |
+            grepl("^SGOV$", 종목명) ~ "현금성ETF",
+          
+          # 기타
+          TRUE ~ 종목명
+        )
+      ) %>%
+      group_by(종목그룹) %>%
+      summarise(
+        총평가금 = sum(한화평가금 / 1e6),
+        총매수금 = sum(총매수금 / 1e6),
+        전일대비 = sum(전일대비 / 1e6),
+        총수익금 = sum(총수익금 / 1e6),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        수익률 = round(총수익금 / 총매수금 * 100, 2),
+        비중 = round(총평가금 / sum(총평가금) * 100, 2)
+      ) %>%
+      filter(비중 >= 1) %>%
+      arrange(desc(총평가금)) %>%
+      rename(종목명 = 종목그룹),
+    n = Inf
+  )
   
-    wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
-    Sys.sleep(wait_min * 60)
+  
+  wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
+  Sys.sleep(wait_min * 60)
 }
 
 # 배치파일로 실행될때는 강제 종료

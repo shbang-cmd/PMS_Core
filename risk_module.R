@@ -457,6 +457,7 @@ run_factor_model <- function(port_ret, factors_df) {
 ###############################################################################
 # 6. quantmod 기반 월간 자산수익률 + 팩터 CSV 업데이트
 ###############################################################################
+
 update_factor_data <- function(symbols = c("SPY","SCHD","QQQ","TQQQ","GLD","IEF"),
                                start_date = "2010-01-01",
                                save_path = getwd()) {
@@ -466,27 +467,47 @@ update_factor_data <- function(symbols = c("SPY","SCHD","QQQ","TQQQ","GLD","IEF"
   suppressMessages(library(readr))
   suppressMessages(library(tidyr))
   
+  # ✅ [수정 1] 현재 경로를 저장해두고, 함수 종료 시 무조건 복원
+  #   - 정상 종료든 에러 중단이든 on.exit()는 반드시 실행됨
+  #   - add = TRUE : 다른 on.exit() 등록이 있어도 덮어쓰지 않음
+  old_wd <- getwd()
+  on.exit(setwd(old_wd), add = TRUE)
+  
   setwd(save_path)
   
-  # 1) 최신 데이터 다운로드
-  getSymbols(symbols, from = start_date, auto.assign = TRUE)
+  # ✅ [수정 2] getSymbols 실패 시 기존 CSV를 보존하고 조용히 종료
+  #   - 네트워크 오류, 마켓 휴장일, Yahoo 서버 불안정 등 대비
+  #   - 기존 코드는 여기서 에러나면 write_csv 전에 중단 → CSV 손상 가능
+  dl_ok <- tryCatch({
+    getSymbols(symbols, from = start_date, auto.assign = TRUE)
+    TRUE
+  }, error = function(e) {
+    cat("[팩터 업데이트] getSymbols 실패:", conditionMessage(e), "\n")
+    FALSE
+  })
   
-  # 2) 월간 자산 수익률 계산
+  if (!dl_ok) {
+    cat("[팩터 업데이트] 데이터 다운로드 실패 → 기존 CSV 유지\n")
+    return(invisible(NULL))  # on.exit()가 경로 복원해줌
+  }
+  
+  # 2) 월간 자산 수익률 계산 (원본 그대로)
   monthly_list <- lapply(symbols, function(sym) {
-    px <- Ad(get(sym))
+    px  <- Ad(get(sym))
     ret <- monthlyReturn(px, type = "arithmetic")
     colnames(ret) <- sym
     ret
   })
   
   all_monthly_xts <- do.call(merge, monthly_list)
-  asset_returns <- data.frame(Date = as.Date(index(all_monthly_xts)),
-                              coredata(all_monthly_xts)) %>%
-    drop_na()
+  asset_returns <- data.frame(
+    Date = as.Date(index(all_monthly_xts)),
+    coredata(all_monthly_xts)
+  ) %>% drop_na()
   
   write_csv(asset_returns, "asset_returns_monthly.csv")
   
-  # 3) 팩터 계산
+  # 3) 팩터 계산 (원본 그대로)
   factors <- asset_returns %>%
     mutate(
       MKT    = SPY,
@@ -501,6 +522,7 @@ update_factor_data <- function(symbols = c("SPY","SCHD","QQQ","TQQQ","GLD","IEF"
   
   cat("[팩터/자산수익률 데이터 자동 업데이트 완료]\n")
 }
+
 
 ###############################################################
 # (1) CSV 불러와서 팩터 회귀 & 요약 출력하는 함수
@@ -746,15 +768,43 @@ run_stress_replay_from_file <- function(
   rets$Date <- as.Date(rets$Date)
   
   asset_cols <- setdiff(colnames(rets), "Date")
-  R_mat      <- as.matrix(rets[, asset_cols])
   
-  if (length(weights) != ncol(R_mat)) {
-    stop("Stress Test: weights 길이와 자산 열 개수가 다릅니다.")
+  # ✅ [수정 1] weights 이름을 CSV 컬럼명으로 변환 (SPY_ETC→SPY, GOLD→GLD)
+  #   - run_var_cvar_from_file, run_pca_dashboard_from_file과 동일한 패턴
+  #   - 나중에 .PMS_NAME_MAP 전역상수로 통일 가능
+  name_map <- c(
+    "SPY_ETC" = "SPY",
+    "GOLD"    = "GLD"
+  )
+  w    <- weights
+  w_nm <- names(w)
+  w_nm <- ifelse(w_nm %in% names(name_map), unname(name_map[w_nm]), w_nm)
+  names(w) <- w_nm
+  
+  # ✅ [수정 2] 교집합(공통 자산)만 사용
+  #   - 기존: length(weights) != ncol(R_mat) → 7 ≠ 6 이므로 항상 stop()
+  #   - 수정: intersect()로 공통 자산만 선택 → CASH처럼 CSV에 없는 항목 자동 제외
+  common_assets <- intersect(asset_cols, names(w))
+  if (length(common_assets) < 2) {
+    cat("[리스크] Stress Test: 공통 자산이 부족합니다. (",
+        paste(common_assets, collapse = ", "), ")\n")
+    return(invisible(NULL))
   }
   
-  if (abs(sum(weights) - 1) > 1e-6) {
-    weights <- weights / sum(weights)
+  # ✅ [수정 3] 공통 자산 순서로 정렬 + 재정규화
+  #   - CASH(4%) 등 CSV에 없는 자산이 빠진 만큼 나머지 비중을 100%로 재조정
+  #   - 예: CASH 4% 제외 → 나머지 96%를 1.0으로 정규화
+  w_use           <- w[common_assets]
+  w_use[w_use < 0] <- 0
+  if (sum(w_use) <= 0) {
+    cat("[리스크] Stress Test: 공통 자산의 weights 합이 0 이하입니다.\n")
+    return(invisible(NULL))
   }
+  w_use <- w_use / sum(w_use)
+  
+  cat("[Stress Test] 사용 자산  :", paste(common_assets, collapse = ", "), "\n")
+  cat("[Stress Test] 비중 합    :", round(sum(w_use), 6),
+      "(CASH 등 CSV 미포함 자산 제외 후 재정규화)\n")
   
   .calc_mdd_from_path <- function(nav_vec) {
     peak <- cummax(nav_vec)
@@ -773,8 +823,10 @@ run_stress_replay_from_file <- function(
   cat("  - 현재 기준 평가금: ", format(round(current_nav), big.mark = ","), "원\n")
   cat("========================================\n\n")
   
-  for (nm in names(crisis_periods)) {
-    rng <- crisis_periods[[nm]]
+  # ※ 루프 변수명 nm → nm_crisis 로 변경
+  #   이유: 위에서 names(w) 갱신에 쓴 지역변수 w_nm과 혼동 방지
+  for (nm_crisis in names(crisis_periods)) {
+    rng    <- crisis_periods[[nm_crisis]]
     s_date <- as.Date(rng[1])
     e_date <- as.Date(rng[2])
     
@@ -783,28 +835,33 @@ run_stress_replay_from_file <- function(
       arrange(Date)
     
     if (nrow(sub) == 0) {
-      cat("[경고] ", nm, " 구간(Date: ", format(s_date), " ~ ", format(e_date), ") 데이터가 없습니다.\n\n")
+      cat("[경고]", nm_crisis,
+          "구간(Date:", format(s_date), "~", format(e_date), ") 데이터가 없습니다.\n\n")
       next
     }
     
-    R_sub <- as.matrix(sub[, asset_cols])
-    port_ret <- as.numeric(R_sub %*% weights)  # 월간 포트 수익률
+    # ✅ [수정 4] common_assets 열만 추출하여 행렬 생성
+    #   - 기존: sub[, asset_cols]  → CSV 전체 6열 (weights 7개와 순서/이름 불일치)
+    #   - 수정: sub[, common_assets] → weights와 완전히 동일한 열 순서 보장
+    R_sub    <- as.matrix(sub[, common_assets, drop = FALSE])
+    port_ret <- as.numeric(R_sub %*% as.numeric(w_use))
     
-    nav <- numeric(length(port_ret))
+    nav    <- numeric(length(port_ret))
     nav[1] <- current_nav * (1 + port_ret[1]) + monthly_contrib
     if (length(port_ret) > 1) {
       for (i in 2:length(port_ret)) {
-        nav[i] <- nav[i-1] * (1 + port_ret[i]) + monthly_contrib
+        nav[i] <- nav[i - 1] * (1 + port_ret[i]) + monthly_contrib
       }
     }
     
     mdd_info <- .calc_mdd_from_path(nav)
     mdd_pct  <- mdd_info$mdd_value * 100
     
-    cat("● 시나리오:", nm, "\n")
-    cat("   기간 :", format(min(sub$Date)), "~", format(max(sub$Date)), " (", nrow(sub), "개 월 수익률)\n")
+    cat("● 시나리오:", nm_crisis, "\n")
+    cat("   기간 :", format(min(sub$Date)), "~", format(max(sub$Date)),
+        " (", nrow(sub), "개월 수익률)\n")
     cat("   최종 평가금:", format(round(tail(nav, 1)), big.mark = ","), "원\n")
-    cat("   최대낙폭(MDD): ", sprintf("%.2f%%", mdd_pct), "\n")
+    cat("   최대낙폭(MDD):", sprintf("%.2f%%", mdd_pct), "\n")
     cat("   위기 구간 동안 수익률 분포 (요약):\n")
     print(summary(port_ret))
     cat("----------------------------------------\n\n")
@@ -812,6 +869,7 @@ run_stress_replay_from_file <- function(
   
   invisible(NULL)
 }
+
 
 ###############################################################################
 # 2) VaR / CVaR 계산
@@ -907,71 +965,6 @@ run_var_cvar_from_file <- function(
 ###############################################################################
 # 3) DRIFT 기반 동적 리밸런싱 신호 : AI보고서를 위한 전역변수 추가
 ###############################################################################
-# run_drift_rebal_signal <- function(
-#     target_weights,
-#     current_weights,
-#     threshold = 0.05
-# ) {
-#   if (length(target_weights) != length(current_weights)) {
-#     stop("DRIFT: target_weights와 current_weights의 길이가 다릅니다.")
-#   }
-#   
-#   if (!is.null(names(target_weights)) && !is.null(names(current_weights))) {
-#     all_names <- union(names(target_weights), names(current_weights))
-#     target_weights  <- target_weights[all_names]
-#     current_weights <- current_weights[all_names]
-#   }
-#   
-#   target_weights[target_weights < 0]   <- 0
-#   current_weights[current_weights < 0] <- 0
-#   
-#   if (sum(target_weights) <= 0 || sum(current_weights) <= 0) {
-#     stop("DRIFT: 비중 합이 0 이하입니다.")
-#   }
-#   
-#   target_norm  <- target_weights / sum(target_weights)
-#   current_norm <- current_weights / sum(current_weights)
-#   
-#   diff <- current_norm - target_norm  # +: 목표보다 초과, -: 부족
-#   df <- data.frame(
-#     Asset          = names(target_norm),
-#     Target_Weight  = round(target_norm * 100, 2),
-#     Current_Weight = round(current_norm * 100, 2),
-#     Drift_pctpt    = round(diff * 100, 2)
-#   )
-#   
-#   cat("\n[리스크] DRIFT 기반 리밸런싱 신호\n")
-#   cat("========================================\n")
-#   cat(" (양수: 목표보다 비중 과다 → 매도 후보)\n")
-#   cat(" (음수: 목표보다 비중 부족 → 매수 후보)\n")
-#   cat("----------------------------------------\n")
-#   print(df, row.names = FALSE)
-#   cat("----------------------------------------\n")
-#   
-#   idx <- which(abs(diff) >= threshold)
-#   if (length(idx) == 0) {
-#     cat("※ 모든 자산의 드리프트가 ±", threshold * 100,
-#         "%p 이내입니다. 당장 리밸런싱 필요 신호는 없습니다.\n\n", sep = "")
-#     return(invisible(df))
-#   }
-#   
-#   cat("※ 리밸런싱 후보 (|Drift| >=", threshold * 100, "%p 이상):\n", sep = "")
-#   for (i in idx) {
-#     nm    <- names(diff)[i]
-#     d_val <- diff[i] * 100
-#     if (d_val > 0) {
-#       cat(" -", nm, ": 목표보다 약 +", sprintf("%.2f", d_val),
-#           "%p 초과 → 일부 매도하여 다른 자산으로 이동 고려\n")
-#     } else {
-#       cat(" -", nm, ": 목표보다 약 ", sprintf("%.2f", d_val),
-#           "%p 부족 → 여유 자금/타 자산 매도로 비중 확대 고려\n")
-#     }
-#   }
-#   cat("========================================\n\n")
-#   
-#   invisible(df)
-# }
-
 run_drift_rebal_signal <- function(
     target_weights,
     current_weights,
@@ -1073,7 +1066,6 @@ run_drift_rebal_signal <- function(
   
   invisible(df)
 }
-
 
 
 # ============================================================
