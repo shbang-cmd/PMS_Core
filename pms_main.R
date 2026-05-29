@@ -386,8 +386,10 @@ get_naver_usdkrw <- function(start_date, end_date) {  # 네이버 금융에서 �
       html_table(fill = TRUE) %>%
       .[[1]]
     
+    # names(tbl) <- c("date", "rate", "change", "buy_cash", "sell_cash", 
+    #                 "send", "receive", "tc_buy", "foreign_check")
     names(tbl) <- c("date", "rate", "change", "buy_cash", "sell_cash", 
-                    "send", "receive", "tc_buy", "foreign_check")
+                    "send", "receive")
     
     tbl <- tbl %>%
       filter(!is.na(date), str_detect(date, "\\d{4}\\.\\d{2}\\.\\d{2}")) %>%
