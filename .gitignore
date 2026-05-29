@@ -9,3 +9,6 @@ reports/
 *.csv
 *.pdf
 *.log
+*.pia
+.positai
+

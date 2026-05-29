@@ -1,4 +1,5 @@
 # quantmod패키지의 getSymbols()함수가 안되는 경우가 있어 네이버 크롤링으로 수정(2026.03.19)
+# SSL에러로 인해 웹조회방식으로 바꿈(2026.5.11)
 
 library(quantmod)
 library(writexl)
@@ -147,7 +148,6 @@ get_us_price <- function(symbol) {
 }
 
 
-
 for (i in 1:nrow(data_en)) {
   
   tickername[i] <- as.character(data_en$종목명[i])
@@ -159,34 +159,7 @@ for (i in 1:nrow(data_en)) {
   amount[i] <- current_price[i] * quantity  # 종목별 평가
   profits[i] <- (current_price[i] - purchase_price) * quantity  # 수익금 계산
   Sys.sleep(0.5) # 안정성을 위해 약간 delay
-  
-  
-  # tickername[i] <- as.character(data_en$종목명[i])
-  # symbol <- as.character(data_en$종목번호[i])
-  # security[i] <- as.character(data_en$보유증권사[i])
-  # purchase_price <- data_en$매수가격[i]
-  # quantity <- data_en$수량[i]
-  # 
-  # # 현재 주식 가격 가져오기
-  # #getSymbols(symbol, src = "yahoo", from = Sys.Date(), to = Sys.Date())
-  # getSymbols(symbol, src = "yahoo", from = Sys.Date()-6, to = Sys.Date()) # 뉴욕과 시차때문에 from Date에서 며칠전 날짜로 설정해줌(오래동안 실행해본 경험에서 나왔음)
-  # 
-  # current_price[i] <- as.numeric(last(get(symbol)[,4])) # symbol 종목의 open, high, low, close 가격에서 4번째 위치한 종가를 가져온다.
-  # 
-  # amount[i] <- current_price[i] * quantity  # 종목별 평가액
-  # 
-  # # 수익금 계산
-  # profits[i] <- (current_price[i] - purchase_price) * quantity
-  # 
-  # Sys.sleep(0.5) # 안정성을 위해 약간 delay
 }
-
-
-
-
-
-
-
 
 
 # 데이터 프레임에 수익금 추가
@@ -268,7 +241,6 @@ new_data_en <- data_en %>%
 new_data_en
 
 
-
 # 아래 통계는 콘솔과 plots창에 표시됨
 # 증권사별 평가액
 new_data <- data %>%
@@ -307,94 +279,6 @@ p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = �
 
 print(p_us)
 print(paste0(nrow(data)-1, "개 미국종목의 수익금 계산이 완료되었습니다. 결과는", output_file, "에 저장되었습니다."))
-
-
-# S&P500지수를 가져와서 spx 전역변수에 저장(나중에 생성형 인공지능AI에서 벤치마크 분석을 위함)
-# get_spx_quantmod <- function() {
-#   suppressWarnings(
-#     quantmod::getSymbols("^GSPC", src = "yahoo", auto.assign = FALSE)
-#   ) -> spx
-# 
-#   # 종가 기준
-#   close_today <- as.numeric(Cl(spx)[NROW(spx)])
-#   close_prev  <- as.numeric(Cl(spx)[NROW(spx) - 1])
-# 
-#   diff <- close_today - close_prev
-#   pct  <- round(diff / close_prev * 100, 2)
-# 
-#   diff_label <- if (diff > 0) {
-#     paste0("+", round(diff, 2))
-#   } else if (diff < 0) {
-#     paste0("-", round(abs(diff), 2))
-#   } else {
-#     paste0("±0")
-#   }
-# 
-#   list(
-#     spx_value = round(close_today, 2),
-#     spx_diff = round(diff, 2),
-#     spx_diff_label = diff_label,
-#     spx_pct = pct
-#   )
-# }
-
-# 네이버에서 S&P500지수를 가져오는 버전
-# get_spx_naver <- function() {
-#   # 1. 네이버 금융 S&P 500 일별 시세 페이지 (심볼: SPI@SPX)
-#   url <- "https://finance.naver.com"
-#   
-#   # 2. 웹 요청 (브라우저인 것처럼 위장하여 차단 방지)
-#   res <- GET(url, user_agent("Mozilla/5.0"))
-#   
-#   if (status_code(res) != 200) {
-#     stop("네이버 서버 연결에 실패했습니다.")
-#   }
-#   
-#   # 3. HTML 읽기 (네이버는 EUC-KR 인코딩)
-#   doc <- read_html(content(res, as = "text", encoding = "euc-kr"))
-#   
-#   # 4. 데이터 테이블 추출 (시세가 들어있는 type_1 클래스 테이블 선택)
-#   tbl <- doc %>% 
-#     html_element("table.type_1") %>% 
-#     html_table()
-#   
-#   # 5. 데이터 전처리 (비어있는 행 제거)
-#   spx_tbl <- tbl %>% filter(!is.na(종가) & 종가 != "")
-#   
-#   if (nrow(spx_tbl) < 2) {
-#     stop("데이터를 가져오지 못했습니다. URL을 확인하세요.")
-#   }
-#   
-#   # 6. 숫자 변환 함수 (쉼표 제거 및 숫자화)
-#   clean_num <- function(x) as.numeric(gsub(",", "", x))
-#   
-#   close_today <- clean_num(spx_tbl$종가[1])
-#   close_prev  <- clean_num(spx_tbl$종가[2])
-#   
-#   # 7. 변동폭 및 등락률 계산
-#   diff <- close_today - close_prev
-#   pct  <- round((diff / close_prev) * 100, 2)
-#   
-#   diff_label <- if (diff > 0) {
-#     paste0("+", format(round(diff, 2), nsmall = 2))
-#   } else if (diff < 0) {
-#     paste0("-", format(round(abs(diff), 2), nsmall = 2))
-#   } else {
-#     "±0"
-#   }
-#   
-#   # 8. 결과값 리스트 반환
-#   return(list(
-#     spx_value = round(close_today, 2),
-#     spx_diff = round(diff, 2),
-#     spx_diff_label = diff_label,
-#     spx_pct = pct
-#   ))
-# }
-# 
-# spx <- get_spx_quantmod()
-
-
 
 
 url <- "https://finance.naver.com/world/sise.naver?symbol=SPI@SPX"
