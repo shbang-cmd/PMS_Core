@@ -1091,9 +1091,169 @@ repeat {
             slice_min(Date, n = 1, with_ties = FALSE) %>%
             ungroup()
           
+          # p <- ggplot(dd_plot_base, aes(x = Date)) +
+          #   geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
+          #   geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
+          #   geom_smooth(
+          #     aes(y = sum_left),
+          #     method = "lm",
+          #     formula = y ~ x,
+          #     se = FALSE,
+          #     color = "orange",
+          #     linetype = "dashed",
+          #     linewidth = 1
+          #   ) +
+          #   geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
+          #   geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
+          #   geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
+          #   scale_color_gradient(
+          #     low  = "#D55E00",
+          #     high = "#0072B2",
+          #     name = "손익\n(단위:\n천만원)"
+          #   ) +
+          #   scale_x_date(
+          #     limits = common_date_range,
+          #     date_breaks = "2 months",
+          #     labels = scales::label_date_short(),
+          #     expand = c(0, 0)
+          #   ) +
+          #   scale_y_continuous(
+          #     name = "보유합계(천만원)",
+          #     sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
+          #   ) +
+          #   labs(
+          #     title = plot_title,
+          #     subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
+          #     x = NULL,
+          #     y = NULL
+          #   ) +
+          #   theme_minimal(base_size = 13) +
+          #   theme(
+          #     plot.title.position = "plot",
+          #     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+          #     plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
+          #     axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
+          #     legend.title = element_text(size = 9),
+          #     legend.text  = element_text(size = 8)
+          #   ) +
+          #   coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
+          #   annotate(
+          #     "text",
+          #     x = min(dd_plot_base$Date, na.rm = TRUE),
+          #     y = max(sum_left, na.rm = TRUE),
+          #     label = label_text,
+          #     hjust = 0,
+          #     vjust = 1,
+          #     size = 3.5,
+          #     color = "black"
+          #   ) +
+          #   annotate(
+          #     "label",
+          #     x = max(dd_plot_base$Date, na.rm = TRUE),
+          #     y = min(sum_left, na.rm = TRUE) * 1.02,
+          #     label = badge_text,
+          #     hjust = 1,
+          #     vjust = 0,
+          #     size = 5.5,
+          #     fontface = "bold",
+          #     fill = badge_color,
+          #     color = "white"
+          #   ) +
+          #   geom_text(
+          #     data = month_start_label,
+          #     aes(
+          #       x = Date,
+          #       y = sum_left,
+          #       label = paste0(round(Sum / 1e8, 1), "억")
+          #     ),
+          #     vjust = 4, # 양수이면 아래쪽으로 숫자 표시, 음수면 위쪽으로 표시
+          #     size = 3,
+          #     color = "black",
+          #     fontface = "bold",
+          #     inherit.aes = FALSE
+          #   ) 
+          # 
+          
+          
+          # ---------- 실제 Drawdown 기준 -5%, -10% 구간 음영 ----------
+          dd_shade <- dd_plot_base %>%
+            arrange(Date) %>%
+            mutate(
+              Peak = cummax(Sum),
+              DD = Sum / Peak - 1,
+              DD_zone = case_when(
+                DD <= -0.10 ~ "DD_10",
+                DD <= -0.05 ~ "DD_5",
+                TRUE ~ NA_character_
+              )
+            ) %>%
+            mutate(
+              is_shade = !is.na(DD_zone),
+              group = cumsum(is_shade != lag(is_shade, default = first(is_shade)))
+            ) %>%
+            filter(is_shade) %>%
+            group_by(group, DD_zone) %>%
+            summarise(
+              xmin = min(Date),
+              xmax = max(Date),
+              .groups = "drop"
+            )
+          
+          # ---------- 선형회귀선 대비 +5% 이상 과열 구간 음영 ----------
+          lm_fit_over <- lm(I(Sum / 1e7) ~ as.numeric(Date), data = dd_plot_base)
+          
+          over_shade <- dd_plot_base %>%
+            arrange(Date) %>%
+            mutate(
+              sum_left = Sum / 1e7,
+              trend = predict(lm_fit_over, newdata = dd_plot_base),
+              gap = sum_left / trend - 1,
+              over_zone = if_else(gap >= 0.05, "OVER_5", NA_character_)
+            ) %>%
+            mutate(
+              is_over = !is.na(over_zone),
+              group = cumsum(is_over != lag(is_over, default = first(is_over)))
+            ) %>%
+            filter(is_over) %>%
+            group_by(group, over_zone) %>%
+            summarise(
+              xmin = min(Date),
+              xmax = max(Date),
+              .groups = "drop"
+            )
+          
           p <- ggplot(dd_plot_base, aes(x = Date)) +
+            
+            # 선형회귀선 대비 +5% 이상: 희미한 붉은색
+            geom_rect(
+              data = over_shade,
+              aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE,
+              fill = "mistyrose",
+              alpha = 0.35
+            ) +
+            
+            # DD -5% 이하 구간
+            geom_rect(
+              data = dd_shade %>% filter(DD_zone == "DD_5"),
+              aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE,
+              fill = "gray80",
+              alpha = 0.18
+            ) +
+            
+            # DD -10% 이하 구간
+            geom_rect(
+              data = dd_shade %>% filter(DD_zone == "DD_10"),
+              aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+              inherit.aes = FALSE,
+              fill = "gray55",
+              alpha = 0.25
+            ) +
+            
             geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
             geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
+            
             geom_smooth(
               aes(y = sum_left),
               method = "lm",
@@ -1103,30 +1263,36 @@ repeat {
               linetype = "dashed",
               linewidth = 1
             ) +
+            
             geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
             geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
             geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
+            
             scale_color_gradient(
               low  = "#D55E00",
               high = "#0072B2",
               name = "손익\n(단위:\n천만원)"
             ) +
+            
             scale_x_date(
               limits = common_date_range,
               date_breaks = "2 months",
               labels = scales::label_date_short(),
               expand = c(0, 0)
             ) +
+            
             scale_y_continuous(
               name = "보유합계(천만원)",
               sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
             ) +
+            
             labs(
               title = plot_title,
               subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
               x = NULL,
               y = NULL
             ) +
+            
             theme_minimal(base_size = 13) +
             theme(
               plot.title.position = "plot",
@@ -1136,7 +1302,9 @@ repeat {
               legend.title = element_text(size = 9),
               legend.text  = element_text(size = 8)
             ) +
+            
             coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
+            
             annotate(
               "text",
               x = min(dd_plot_base$Date, na.rm = TRUE),
@@ -1147,6 +1315,7 @@ repeat {
               size = 3.5,
               color = "black"
             ) +
+            
             annotate(
               "label",
               x = max(dd_plot_base$Date, na.rm = TRUE),
@@ -1159,6 +1328,7 @@ repeat {
               fill = badge_color,
               color = "white"
             ) +
+            
             geom_text(
               data = month_start_label,
               aes(
@@ -1166,12 +1336,13 @@ repeat {
                 y = sum_left,
                 label = paste0(round(Sum / 1e8, 1), "억")
               ),
-              vjust = 4, # 양수이면 아래쪽으로 숫자 표시, 음수면 위쪽으로 표시
+              vjust = 4,
               size = 3,
               color = "black",
               fontface = "bold",
               inherit.aes = FALSE
-            ) 
+            )
+          
           
           
           # ---------- 중단 누적수익(막대)+수익률(선) ----------
