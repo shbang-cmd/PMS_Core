@@ -417,10 +417,14 @@ PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
 UPDATE_EVERY_SEC <- 10
 last_update_time <- Sys.time() - 9999
 
+
+
 # =========================================================
 # 반복 루프 시작
 # =========================================================
 repeat {
+  
+  #graphics.off()  # 열린 windows 닫기
   
   now  <- as.POSIXct(Sys.time())
   hhmm <- format(now, "%H:%M")
@@ -1078,6 +1082,9 @@ repeat {
           common_date_range[2] <- common_date_range[2] + 2
           
           
+          
+          # 창1 갱신
+          #windows()
           suppressWarnings(source("pms_benchmark.R"))  # S&P500, NASDAQ100과 벤치마크 비교 : 한화면에 벤치마크 지수와 비교해줌
           
           # ---------- 상단 플롯(p) ----------
@@ -1344,7 +1351,6 @@ repeat {
             )
           
           
-          
           # ---------- 중단 누적수익(막대)+수익률(선) ----------
           dd_mid <- dd_plot_base %>%
             mutate(Profit_man = Profit / 1e7,
@@ -1576,19 +1582,240 @@ repeat {
             )
           
           
+          # gauge_share_plot <- function(cur_val, max_val,
+          #                              title = "Gauge",
+          #                              cur_text = NULL,
+          #                              max_text = NULL,
+          #                              ring_width = 6) {
+          #   
+          #   if (is.na(cur_val) || is.na(max_val) || max_val == 0) stop("cur/max 값이 NA이거나 max_val이 0입니다.")
+          #   
+          #   ratio <- abs(cur_val) / abs(max_val)
+          #   ratio <- max(0, min(1, ratio))
+          #   
+          #   # 0%(12시) -> 100%(3시): x=-pi/2 -> x=-pi
+          #   needle_x <- -pi/2 - ratio*(pi/2)
+          #   
+          #   seg <- data.frame(
+          #     x0  = c(-pi/2, -2*pi/3, -5*pi/6),
+          #     x1  = c(-2*pi/3, -5*pi/6, -pi),
+          #     y   = 1,
+          #     col = c("#9BE37D", "#FFD84D", "#FFA24D")
+          #   )
+          #   
+          #   # 허브/바늘
+          #   hub_y <- 0
+          #   needle_base <- data.frame(x = needle_x, y0 = 0.0, y1 = 0.3)
+          #   needle_tip  <- data.frame(x = needle_x, y0 = 0.12, y1 = 0.95)
+          #   
+          #   if (is.null(cur_text)) cur_text <- as.character(cur_val)
+          #   if (is.null(max_text)) max_text <- as.character(max_val)
+          #   
+          #   # ✅ 우측 텍스트(게이지 바로 오른쪽, 같은 패널 안)
+          #   side_txt <- sprintf("Current : %s\nMax(100%%): %s", cur_text, max_text)
+          #   
+          #   # share label at needle
+          #   share_label <- scales::percent(ratio, accuracy = 0.01)
+          #   
+          #   
+          #   
+          #   # ---------------------------------------------------------
+          #   # 1) 게이지 그림 
+          #   # ---------------------------------------------------------
+          #   p_gauge <- ggplot2::ggplot() +
+          #     ggplot2::geom_segment(
+          #       data = seg,
+          #       ggplot2::aes(x = x0, y = y, xend = x1, yend = y, colour = col),
+          #       # linewidth = ring_width, lineend = "round"
+          #       linewidth = ring_width, lineend = "butt"
+          #     ) +
+          #     ggplot2::scale_colour_identity() +
+          #     ggplot2::geom_segment(
+          #       data = needle_base,
+          #       ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
+          #       # linewidth = 3.0, lineend = "round"
+          #       linewidth = 3.0, lineend = "butt"
+          #     ) +
+          #     ggplot2::geom_segment(
+          #       data = needle_tip,
+          #       ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
+          #       linewidth = 1.3,
+          #       arrow = grid::arrow(length = grid::unit(0.04, "npc"), type = "closed")
+          #     ) +
+          #     ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 3.4) +
+          #     ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 1.2) +
+          #     ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color="gray") +
+          #     ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color="gray") +
+          #     ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color="gray") +
+          #     ggplot2::annotate(
+          #       "text",
+          #       x = needle_x, y = 1.18,
+          #       label = share_label,
+          #       size = 3.3,
+          #       fontface = "bold.italic",
+          #       colour = "blue"
+          #     ) +
+          #     # ✅ 타이틀을 게이지 내부 좌상단에 고정(패널의 좌측/우측 헷갈림 제거)
+          #     ggplot2::annotate(
+          #       "text",
+          #       x = -pi, y = 1.22,
+          #       label = title,
+          #       hjust = 0, vjust = 1,
+          #       size = 4.2, fontface = "bold"
+          #     ) +
+          #     ggplot2::coord_polar(theta = "x", start = pi, direction = 1, clip = "off") +
+          #     ggplot2::xlim(-pi, 0) +
+          #     ggplot2::ylim(0, 1.25) +
+          #     ggplot2::theme_void() +
+          #     ggplot2::theme(
+          #       plot.margin = ggplot2::margin(2, 0, 2, 0)
+          #     )
+          #   
+          #   # ---------------------------------------------------------
+          #   # 2) 우측 텍스트 패널 (게이지 바로 오른쪽)
+          #   # ---------------------------------------------------------
+          #   p_text <- ggplot2::ggplot() +
+          #     ggplot2::theme_void() +
+          #     ggplot2::annotate(
+          #       "text",
+          #       x = -0.9, y = 0,      # 텍스트 위치
+          #       label = side_txt,
+          #       hjust = 0, vjust = 0.5,
+          #       size = 3.0,
+          #       colour = "blue",
+          #       fontface = "italic",
+          #       lineheight = 0.95
+          #     ) +
+          #     ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
+          #     ggplot2::theme(plot.margin = ggplot2::margin(2, 0, 2, 0))
+          #   
+          #   # ✅ “한 카드”로 결합: 게이지(좌) + 텍스트(우)
+          #   p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
+          # }
+          # 
+          # gauge_with_left_title <- function(gauge_plot, title_left,
+          #                                   left_width = 0.55, right_width = 1.45) {
+          #   p_left <- ggplot2::ggplot() +
+          #     ggplot2::theme_void() +
+          #     ggplot2::annotate("text", x = 0, y = 0,
+          #                       label = title_left,
+          #                       hjust = 0, vjust = 0.5,
+          #                       size = 5, fontface = "bold") +
+          #     ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
+          #     ggplot2::theme(plot.margin = ggplot2::margin(6, 2, 6, 8))
+          #   
+          #   p_left + gauge_plot +
+          #     patchwork::plot_layout(widths = c(left_width, right_width))
+          # }
+          # 
+          # build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63) {
+          #   
+          #   cur_sum_amt <- as.numeric(today_sum)
+          #   
+          #   dd_vec <- dd2$DD
+          #   dd_vec <- dd_vec[is.finite(dd_vec)]
+          #   if (length(dd_vec) < 5) {
+          #     return(ggplot2::ggplot() + ggplot2::theme_void() +
+          #              ggplot2::annotate("text", x=0, y=0, label="DD 데이터 부족", size=5))
+          #   }
+          #   
+          #   cur_dd <- as.numeric(today_dd)
+          #   mdd    <- as.numeric(min(dd_vec, na.rm = TRUE))
+          #   
+          #   cvar_ratio <- NA_real_
+          #   if (!is.na(cvar_amt) && is.finite(cvar_amt) && is.finite(cur_sum_amt) && cur_sum_amt > 0) {
+          #     cvar_ratio <- -abs(as.numeric(cvar_amt) / cur_sum_amt)
+          #   }
+          #   
+          #   # cur_dur <- as.integer(consecutive_days)
+          #   # Drawdown 연속일(=현재 DD 구간의 길이)
+          #   if (length(dd_vec) == 0 || is.na(tail(dd_vec, 1))) {
+          #     cur_dur <- NA_integer_
+          #   } else if (tail(dd_vec, 1) >= 0) {
+          #     cur_dur <- 0L
+          #   } else {
+          #     i <- length(dd_vec)
+          #     cur_dur <- 0L
+          #     while (i >= 1 && !is.na(dd_vec[i]) && dd_vec[i] < 0) {
+          #       cur_dur <- cur_dur + 1L
+          #       i <- i - 1
+          #     }
+          #   }
+          #   
+          #   r <- rle(dd_vec < 0)
+          #   max_dur <- if (any(r$values)) max(r$lengths[r$values]) else 0L
+          #   if (max_dur == 0) max_dur <- 1L
+          #   
+          #   ui_roll <- zoo::rollapply(
+          #     dd_vec, width = ui_win, align = "right", fill = NA_real_,
+          #     FUN = function(x) sqrt(mean(x^2, na.rm = TRUE))
+          #   )
+          #   cur_ui <- as.numeric(tail(ui_roll, 1))
+          #   max_ui <- suppressWarnings(max(as.numeric(ui_roll), na.rm = TRUE))
+          #   if (!is.finite(max_ui) || max_ui == 0) max_ui <- 1e-9
+          #   
+          #   g1 <- gauge_share_plot(cur_dd, mdd,
+          #                          title    = "DD vs MDD",
+          #                          cur_text = scales::percent(cur_dd, accuracy = 0.01),
+          #                          max_text = scales::percent(mdd,    accuracy = 0.01)
+          #   )
+          #   
+          #   if (is.na(cvar_ratio)) {
+          #     g2 <- ggplot2::ggplot() + ggplot2::theme_void() +
+          #       ggplot2::annotate("text", x=0, y=0, label="CVaR 데이터 없음", size=5)
+          #   } else {
+          #     g2 <- gauge_share_plot(cur_dd, cvar_ratio,
+          #                            title    = "DD vs CVaR",
+          #                            cur_text = scales::percent(cur_dd, accuracy = 0.01),
+          #                            max_text = scales::percent(cvar_ratio, accuracy = 0.01)
+          #     )
+          #   }
+          #   
+          #   g3 <- gauge_share_plot(cur_dur, max_dur,
+          #                          title    = "DD Duration",
+          #                          cur_text = paste0(cur_dur, "D"),
+          #                          max_text = paste0(max_dur, "D")
+          #   )
+          #   
+          #   g4 <- gauge_share_plot(cur_ui, max_ui,
+          #                          title    = paste0("Ulcer(", ui_win, "D)"),
+          #                          cur_text = ifelse(is.na(cur_ui), "NA", scales::percent(cur_ui, accuracy = 0.01)),
+          #                          max_text = scales::percent(max_ui, accuracy = 0.01)
+          #   )
+          #   
+          #   patchwork::wrap_plots(g1, g2, g3, g4, nrow = 1)
+          # }
+          # 
+          # g_row <- build_risk_gauge_row(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63)
+          # 
+          
+          
+          
+          # =========================================================
+          # 게이지 함수 전체 교체 블록
+          # =========================================================
+          
           gauge_share_plot <- function(cur_val, max_val,
                                        title = "Gauge",
                                        cur_text = NULL,
                                        max_text = NULL,
+                                       side_txt = NULL,
                                        ring_width = 6) {
             
-            if (is.na(cur_val) || is.na(max_val) || max_val == 0) stop("cur/max 값이 NA이거나 max_val이 0입니다.")
+            if (is.na(cur_val) || is.na(max_val) || max_val == 0) {
+              return(
+                ggplot2::ggplot() +
+                  ggplot2::theme_void() +
+                  ggplot2::annotate("text", x = 0, y = 0,
+                                    label = paste0(title, "\n데이터 없음"),
+                                    size = 5)
+              )
+            }
             
             ratio <- abs(cur_val) / abs(max_val)
             ratio <- max(0, min(1, ratio))
             
-            # 0%(12시) -> 100%(3시): x=-pi/2 -> x=-pi
-            needle_x <- -pi/2 - ratio*(pi/2)
+            needle_x <- -pi/2 - ratio * (pi/2)
             
             seg <- data.frame(
               x0  = c(-pi/2, -2*pi/3, -5*pi/6),
@@ -1597,36 +1824,31 @@ repeat {
               col = c("#9BE37D", "#FFD84D", "#FFA24D")
             )
             
-            # 허브/바늘
-            hub_y <- 0
             needle_base <- data.frame(x = needle_x, y0 = 0.0, y1 = 0.3)
             needle_tip  <- data.frame(x = needle_x, y0 = 0.12, y1 = 0.95)
             
             if (is.null(cur_text)) cur_text <- as.character(cur_val)
             if (is.null(max_text)) max_text <- as.character(max_val)
             
-            # ✅ 우측 텍스트(게이지 바로 오른쪽, 같은 패널 안)
-            side_txt <- sprintf("Current : %s\nMax(100%%): %s", cur_text, max_text)
+            if (is.null(side_txt)) {
+              side_txt <- sprintf("Current : %s\nMax(100%%): %s", cur_text, max_text)
+            }
             
-            # share label at needle
             share_label <- scales::percent(ratio, accuracy = 0.01)
             
-            # ---------------------------------------------------------
-            # 1) 게이지 그림 
-            # ---------------------------------------------------------
             p_gauge <- ggplot2::ggplot() +
               ggplot2::geom_segment(
                 data = seg,
                 ggplot2::aes(x = x0, y = y, xend = x1, yend = y, colour = col),
-                # linewidth = ring_width, lineend = "round"
-                linewidth = ring_width, lineend = "butt"
+                linewidth = ring_width,
+                lineend = "butt"
               ) +
               ggplot2::scale_colour_identity() +
               ggplot2::geom_segment(
                 data = needle_base,
                 ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
-                # linewidth = 3.0, lineend = "round"
-                linewidth = 3.0, lineend = "butt"
+                linewidth = 3.0,
+                lineend = "butt"
               ) +
               ggplot2::geom_segment(
                 data = needle_tip,
@@ -1636,9 +1858,9 @@ repeat {
               ) +
               ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 3.4) +
               ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 1.2) +
-              ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color="gray") +
-              ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color="gray") +
-              ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color="gray") +
+              ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color = "gray") +
+              ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color = "gray") +
+              ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color = "gray") +
               ggplot2::annotate(
                 "text",
                 x = needle_x, y = 1.18,
@@ -1647,13 +1869,14 @@ repeat {
                 fontface = "bold.italic",
                 colour = "blue"
               ) +
-              # ✅ 타이틀을 게이지 내부 좌상단에 고정(패널의 좌측/우측 헷갈림 제거)
               ggplot2::annotate(
                 "text",
                 x = -pi, y = 1.22,
                 label = title,
-                hjust = 0, vjust = 1,
-                size = 4.2, fontface = "bold"
+                hjust = 0,
+                vjust = 1,
+                size = 4.2,
+                fontface = "bold"
               ) +
               ggplot2::coord_polar(theta = "x", start = pi, direction = 1, clip = "off") +
               ggplot2::xlim(-pi, 0) +
@@ -1663,16 +1886,15 @@ repeat {
                 plot.margin = ggplot2::margin(2, 0, 2, 0)
               )
             
-            # ---------------------------------------------------------
-            # 2) 우측 텍스트 패널 (게이지 바로 오른쪽)
-            # ---------------------------------------------------------
             p_text <- ggplot2::ggplot() +
               ggplot2::theme_void() +
               ggplot2::annotate(
                 "text",
-                x = -0.9, y = 0,      # 텍스트 위치
+                x = -0.9,
+                y = 0,
                 label = side_txt,
-                hjust = 0, vjust = 0.5,
+                hjust = 0,
+                vjust = 0.5,
                 size = 3.0,
                 colour = "blue",
                 fontface = "italic",
@@ -1681,18 +1903,26 @@ repeat {
               ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
               ggplot2::theme(plot.margin = ggplot2::margin(2, 0, 2, 0))
             
-            # ✅ “한 카드”로 결합: 게이지(좌) + 텍스트(우)
             p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
           }
           
+          
           gauge_with_left_title <- function(gauge_plot, title_left,
-                                            left_width = 0.55, right_width = 1.45) {
+                                            left_width = 0.55,
+                                            right_width = 1.45) {
+            
             p_left <- ggplot2::ggplot() +
               ggplot2::theme_void() +
-              ggplot2::annotate("text", x = 0, y = 0,
-                                label = title_left,
-                                hjust = 0, vjust = 0.5,
-                                size = 5, fontface = "bold") +
+              ggplot2::annotate(
+                "text",
+                x = 0,
+                y = 0,
+                label = title_left,
+                hjust = 0,
+                vjust = 0.5,
+                size = 5,
+                fontface = "bold"
+              ) +
               ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
               ggplot2::theme(plot.margin = ggplot2::margin(6, 2, 6, 8))
             
@@ -1700,27 +1930,126 @@ repeat {
               patchwork::plot_layout(widths = c(left_width, right_width))
           }
           
-          build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63) {
+          
+          build_fear_greed_gauge <- function(dd2) {
+            
+            if (!"Sum" %in% names(dd2)) {
+              return(
+                ggplot2::ggplot() +
+                  ggplot2::theme_void() +
+                  ggplot2::annotate("text", x = 0, y = 0,
+                                    label = "Fear & Greed\nSum 컬럼 없음",
+                                    size = 5)
+              )
+            }
+            
+            y <- as.numeric(dd2$Sum)
+            ok <- is.finite(y)
+            y <- y[ok]
+            
+            if (length(y) < 30) {
+              return(
+                ggplot2::ggplot() +
+                  ggplot2::theme_void() +
+                  ggplot2::annotate("text", x = 0, y = 0,
+                                    label = "Fear & Greed\n데이터 부족",
+                                    size = 5)
+              )
+            }
+            
+            x <- seq_along(y)
+            fit <- stats::lm(y ~ x)
+            fitted_y <- as.numeric(stats::fitted(fit))
+            resid_vec <- y - fitted_y
+            
+            cur_resid <- tail(resid_vec, 1)
+            resid_sd  <- stats::sd(resid_vec, na.rm = TRUE)
+            
+            if (!is.finite(resid_sd) || resid_sd == 0) {
+              resid_sd <- 1e-9
+            }
+            
+            z <- cur_resid / resid_sd
+            
+            fg_score <- (z + 3) / 6 * 100
+            fg_score <- max(0, min(100, fg_score))
+            
+            gap_pct <- (tail(y, 1) / tail(fitted_y, 1) - 1) * 100
+            
+            state_txt <- dplyr::case_when(
+              z <= -3 ~ "극도의 공포",
+              z <= -2 ~ "공포",
+              z <= -1 ~ "약한 공포",
+              z <   1 ~ "중립",
+              z <   2 ~ "약한 탐욕",
+              z <   3 ~ "탐욕",
+              TRUE    ~ "극도의 탐욕"
+            )
+            
+            action_txt <- dplyr::case_when(
+              z <= -3 ~ "공격매수 검토",
+              z <= -2 ~ "분할매수 우호",
+              z <= -1 ~ "매수 가능",
+              z <   1 ~ "중립 유지",
+              z <   2 ~ "신규매수 축소",
+              z <   3 ~ "매수 보류",
+              TRUE    ~ "과열, 현금 대기"
+            )
+            
+            side_txt <- sprintf(
+              "Score : %.0f / 100\nz-score : %.2f\n괴리율 : %.1f%%\n상태 : %s\n판단 : %s",
+              fg_score,
+              z,
+              gap_pct,
+              state_txt,
+              action_txt
+            )
+            
+            gauge_share_plot(
+              cur_val  = fg_score,
+              max_val  = 100,
+              title    = "Fear & Greed",
+              cur_text = sprintf("%.0f", fg_score),
+              max_text = "100",
+              side_txt = side_txt
+            )
+          }
+          
+          
+          build_risk_gauge_row <- function(today_dd,
+                                           consecutive_days,
+                                           cvar_amt,
+                                           dd2,
+                                           today_sum,
+                                           ui_win = 63) {
             
             cur_sum_amt <- as.numeric(today_sum)
             
             dd_vec <- dd2$DD
             dd_vec <- dd_vec[is.finite(dd_vec)]
+            
             if (length(dd_vec) < 5) {
-              return(ggplot2::ggplot() + ggplot2::theme_void() +
-                       ggplot2::annotate("text", x=0, y=0, label="DD 데이터 부족", size=5))
+              return(
+                ggplot2::ggplot() +
+                  ggplot2::theme_void() +
+                  ggplot2::annotate("text", x = 0, y = 0,
+                                    label = "DD 데이터 부족",
+                                    size = 5)
+              )
             }
             
             cur_dd <- as.numeric(today_dd)
             mdd    <- as.numeric(min(dd_vec, na.rm = TRUE))
             
             cvar_ratio <- NA_real_
-            if (!is.na(cvar_amt) && is.finite(cvar_amt) && is.finite(cur_sum_amt) && cur_sum_amt > 0) {
+            
+            if (!is.na(cvar_amt) &&
+                is.finite(cvar_amt) &&
+                is.finite(cur_sum_amt) &&
+                cur_sum_amt > 0) {
               cvar_ratio <- -abs(as.numeric(cvar_amt) / cur_sum_amt)
             }
             
-            # cur_dur <- as.integer(consecutive_days)
-            # Drawdown 연속일(=현재 DD 구간의 길이)
             if (length(dd_vec) == 0 || is.na(tail(dd_vec, 1))) {
               cur_dur <- NA_integer_
             } else if (tail(dd_vec, 1) >= 0) {
@@ -1728,6 +2057,7 @@ repeat {
             } else {
               i <- length(dd_vec)
               cur_dur <- 0L
+              
               while (i >= 1 && !is.na(dd_vec[i]) && dd_vec[i] < 0) {
                 cur_dur <- cur_dur + 1L
                 i <- i - 1
@@ -1739,46 +2069,80 @@ repeat {
             if (max_dur == 0) max_dur <- 1L
             
             ui_roll <- zoo::rollapply(
-              dd_vec, width = ui_win, align = "right", fill = NA_real_,
+              dd_vec,
+              width = ui_win,
+              align = "right",
+              fill = NA_real_,
               FUN = function(x) sqrt(mean(x^2, na.rm = TRUE))
             )
+            
             cur_ui <- as.numeric(tail(ui_roll, 1))
             max_ui <- suppressWarnings(max(as.numeric(ui_roll), na.rm = TRUE))
-            if (!is.finite(max_ui) || max_ui == 0) max_ui <- 1e-9
             
-            g1 <- gauge_share_plot(cur_dd, mdd,
-                                   title    = "DD vs MDD",
-                                   cur_text = scales::percent(cur_dd, accuracy = 0.01),
-                                   max_text = scales::percent(mdd,    accuracy = 0.01)
+            if (!is.finite(max_ui) || max_ui == 0) {
+              max_ui <- 1e-9
+            }
+            
+            g1 <- gauge_share_plot(
+              cur_dd,
+              mdd,
+              title    = "DD vs MDD",
+              cur_text = scales::percent(cur_dd, accuracy = 0.01),
+              max_text = scales::percent(mdd, accuracy = 0.01)
             )
             
             if (is.na(cvar_ratio)) {
-              g2 <- ggplot2::ggplot() + ggplot2::theme_void() +
-                ggplot2::annotate("text", x=0, y=0, label="CVaR 데이터 없음", size=5)
+              g2 <- ggplot2::ggplot() +
+                ggplot2::theme_void() +
+                ggplot2::annotate("text", x = 0, y = 0,
+                                  label = "CVaR 데이터 없음",
+                                  size = 5)
             } else {
-              g2 <- gauge_share_plot(cur_dd, cvar_ratio,
-                                     title    = "DD vs CVaR",
-                                     cur_text = scales::percent(cur_dd, accuracy = 0.01),
-                                     max_text = scales::percent(cvar_ratio, accuracy = 0.01)
+              g2 <- gauge_share_plot(
+                cur_dd,
+                cvar_ratio,
+                title    = "DD vs CVaR",
+                cur_text = scales::percent(cur_dd, accuracy = 0.01),
+                max_text = scales::percent(cvar_ratio, accuracy = 0.01)
               )
             }
             
-            g3 <- gauge_share_plot(cur_dur, max_dur,
-                                   title    = "DD Duration",
-                                   cur_text = paste0(cur_dur, "D"),
-                                   max_text = paste0(max_dur, "D")
+            g3 <- gauge_share_plot(
+              cur_dur,
+              max_dur,
+              title    = "DD Duration",
+              cur_text = paste0(cur_dur, "D"),
+              max_text = paste0(max_dur, "D")
             )
             
-            g4 <- gauge_share_plot(cur_ui, max_ui,
-                                   title    = paste0("Ulcer(", ui_win, "D)"),
-                                   cur_text = ifelse(is.na(cur_ui), "NA", scales::percent(cur_ui, accuracy = 0.01)),
-                                   max_text = scales::percent(max_ui, accuracy = 0.01)
+            g4 <- gauge_share_plot(
+              cur_ui,
+              max_ui,
+              title    = paste0("Ulcer(", ui_win, "D)"),
+              cur_text = ifelse(
+                is.na(cur_ui),
+                "NA",
+                scales::percent(cur_ui, accuracy = 0.01)
+              ),
+              max_text = scales::percent(max_ui, accuracy = 0.01)
             )
             
-            patchwork::wrap_plots(g1, g2, g3, g4, nrow = 1)
+            g5 <- build_fear_greed_gauge(dd2)
+            
+            patchwork::wrap_plots(g1, g2, g3, g4, g5, nrow = 1)
           }
           
-          g_row <- build_risk_gauge_row(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63)
+          
+          g_row <- build_risk_gauge_row(
+            today_dd,
+            consecutive_days,
+            cvar_amt,
+            dd2,
+            today_sum,
+            ui_win = 63
+          )
+          
+          
           
           
           if (risk_ready) {
@@ -1789,6 +2153,8 @@ repeat {
               patchwork::plot_layout(heights = c(2.2, 1, 0.40, 0.65))
           }
           
+          # 창2 갱신
+          #windows() 
           suppressMessages(print(combined_plot))
           
           # PDF 저장
