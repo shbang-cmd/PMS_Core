@@ -3,20 +3,24 @@
 #
 # 1줄 사용법 : 그냥 Ctrl + Alt + R 키를 누른다(전체 실행)
 #
-# - stock_eval.R / stock_eval_us.R 필요(국내, 미국 주식 데이터 수집 모듈)
+# - stock_eval.R / stock_eval_us.R 필요(각각 국내 및 미국 주식 데이터 수집 모듈)
 # - risk_module.R 필요(리스크관리 함수 모음)
-#   . risk_module.R의 몬테카, MDD, 인출, 팩터, PCA를 모두 호출
-# 입력 파일
+#   . risk_module.R의 몬테카를로, MDD, 인출, 팩터, PCA를 모두 호출
+# - pms_benchmark.R : S&P500, NASDAQ 지수와 벤치마크 비교용 소스
+#
+# [입력 파일]
 #         input_stock.csv    : 한국주식
 #         input_stock_us.csv : 미국주식
 #         output_sum.csv                      : 전일 평가액총액, 수익금(입력이자 출력파일)
-# 출력 파일
+#
+# [출력 파일]
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
 #         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
 #         output_sum.csv                      : 평가액총액, 수익금
 #                                               (최소 100일이상 데이터 필요)
 #         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
 #         reports/gemini_prompt.txt           : 제미나이 질의어(프롬프트)
+#
 # - 누적 데이터(output_sum.csv)가 100일이 안되면 리스크 관리 분석은 생략
 # 주) 리스크 및 운용 성과 평가는 TWR 기준,계좌 증감 및 체감 성과 표시는 NAV 기준으로 해석(형식적으로는 NAV 기반, 개념적으로는 TWR(Time-Weighted Return)에 해당)
 ###############################################
@@ -32,7 +36,7 @@ pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
          "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
-         "dplyr", "writexl", "purrr")
+         "dplyr", "writexl", "purrr", "broom")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
@@ -44,7 +48,7 @@ library(patchwork); library(treemap); library(DT)
 library(stringr); library(PerformanceAnalytics)
 library(zoo); library(tidyr); library(quantmod); library(xts)
 library(rugarch); library(htmltools); library(tidyverse)
-library(writexl); library(purrr)
+library(writexl); library(purrr); library(broom)
 
 # -------------------------------------------------
 # Sunday check : 일요일이면 바로 종료
