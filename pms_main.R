@@ -298,9 +298,11 @@ make_gemini_prompt_pms <- function(
         정량 수치 없이 거시적 분위기를 정성적으로 요약할 수 있습니다.
       - 특정 지수 수치, 방향성 예측, 투자 판단은 금지합니다.
       
-      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고, 오늘 환화평가금과의 관계와 아래의 S&P500지수 일간등락의 관계를 함께 분석해줘줘
+      8) 오늘의 원달러환율과 전일대비를 숫자로 표시하고, 오늘 환화평가금과의 관계와 아래의 S&P500지수 일간등락의 관계를 함께 분석해줘
+      
+      9) 전영업일대비 보유종목 변동을 알기 쉽게 표시해줘
 
-      9)  마지막 끝낼 때 [오늘의 유머]라고 말머리를 달고 아주 랜덤하게 주식 유머 하나만 짧게 해줘
+      10)  마지막 끝낼 때 [오늘의 유머]라고 말머리를 달고 아주 랜덤하게 주식 유머 하나만 짧게 해줘
       
       주의)
       정량 수치가 없는 경우, 시장 환경은
@@ -319,7 +321,8 @@ make_gemini_prompt_pms <- function(
     "=== [6] Errors ===\n", err_txt, "\n\n",
     "=== [7] 원달러환율(전일대비) ===\n", exchange_rate, "(", exchange_diff, ")", "\n\n",
     "=== [9] S&P500 지수 :", spx$spx_value, "(전일대비:", spx$spx_diff_label, ", 일간변동률:", spx$spx_pct, "%)\n\n",
-    "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n")
+    "===[10] Drift 의견 :", get0("PMS_OPINION_DRIFT", ifnotfound = ""),"\n\n",
+    "===[11] ", stock_change_msg,"\n\n")
 }
 
 
@@ -422,6 +425,135 @@ UPDATE_EVERY_SEC <- 10
 last_update_time <- Sys.time() - 9999
 
 
+# =========================================================
+# 루프 시작 전에 전일자 파일과 비교하여 변동사항이 있는지 표시
+# =========================================================
+
+
+get_prev_output_file <- function(prefix) {
+  files <- list.files(
+    pattern = paste0("^", prefix, "\\d{4}-\\d{2}-\\d{2}\\.xlsx$")
+  )
+  
+  files <- sort(files)
+  
+  if (length(files) < 2) return(NA_character_)
+  
+  files[length(files) - 1]
+}
+
+compare_stock_change <- function(today_file, prev_file, market = "KR") {
+  
+  if (is.na(prev_file) || !file.exists(prev_file) || !file.exists(today_file)) {
+    return(tibble())
+  }
+  
+  prev <- read_excel(prev_file)
+  today <- read_excel(today_file)
+  
+  prev2 <- prev %>%
+    filter(!is.na(종목명), !is.na(종목번호)) %>%
+    select(종목명, 종목번호, 보유증권사, 수량) %>%
+    mutate(
+      시장 = market,
+      old_qty = as.numeric(수량)
+    ) %>%
+    select(시장, 종목명, 종목번호, 보유증권사, old_qty)
+  
+  today2 <- today %>%
+    filter(!is.na(종목명), !is.na(종목번호)) %>%
+    select(종목명, 종목번호, 보유증권사, 수량) %>%
+    mutate(
+      시장 = market,
+      new_qty = as.numeric(수량)
+    ) %>%
+    select(시장, 종목명, 종목번호, 보유증권사, new_qty)
+  
+  full_join(
+    prev2,
+    today2,
+    by = c("시장", "종목명", "종목번호", "보유증권사")
+  ) %>%
+    mutate(
+      old_qty = ifelse(is.na(old_qty), 0, old_qty),
+      new_qty = ifelse(is.na(new_qty), 0, new_qty),
+      diff_qty = new_qty - old_qty,
+      변동유형 = case_when(
+        old_qty == 0 & new_qty > 0 ~ "신규매수",
+        old_qty > 0 & new_qty == 0 ~ "전량매도",
+        old_qty > 0 & new_qty > old_qty ~ "추가매수",
+        old_qty > 0 & new_qty < old_qty ~ "일부매도",
+        TRUE ~ "변동없음"
+      )
+    ) %>%
+    filter(변동유형 != "변동없음")
+}
+
+today <- Sys.Date()
+
+today_ko_file <- paste0("output_stock_", today, ".xlsx")
+today_us_file <- paste0("output_stock_us_", today, ".xlsx")
+
+prev_ko_file <- get_prev_output_file("output_stock_")
+prev_us_file <- get_prev_output_file("output_stock_us_")
+
+change_ko <- compare_stock_change(
+  today_file = today_ko_file,
+  prev_file  = prev_ko_file,
+  market = "KR"
+)
+
+change_us <- compare_stock_change(
+  today_file = today_us_file,
+  prev_file  = prev_us_file,
+  market = "US"
+)
+
+change_all <- bind_rows(change_ko, change_us)
+
+print(change_all, n = Inf)
+
+make_stock_change_message <- function(change_all) {
+  
+  if (nrow(change_all) == 0) {
+    return("[전영업일 대비 보유종목 변동]\n변동사항 없음\n")
+  }
+  
+  msg <- "[전영업일 대비 보유종목 변동]\n"
+  
+  for (tp in c("신규매수", "추가매수", "일부매도", "전량매도")) {
+    
+    tmp <- change_all %>% filter(변동유형 == tp)
+    
+    if (nrow(tmp) > 0) {
+      msg <- paste0(msg, "\n■ ", tp, "\n")
+      
+      lines <- paste0(
+        "- [", tmp$시장, "] ",
+        tmp$종목명, " / ",
+        tmp$보유증권사,
+        " : ",
+        tmp$old_qty,
+        "주 → ",
+        tmp$new_qty,
+        "주 (",
+        ifelse(tmp$diff_qty > 0, "+", ""),
+        tmp$diff_qty,
+        "주)"
+      )
+      
+      msg <- paste0(msg, paste(lines, collapse = "\n"), "\n")
+    }
+  }
+  
+  msg
+}
+
+stock_change_msg <- make_stock_change_message(change_all)
+
+cat(stock_change_msg)
+
+
 
 # =========================================================
 # 반복 루프 시작
@@ -510,7 +642,6 @@ repeat {
       dd_daily_n <- updated_data %>% dplyr::distinct(Date) %>% dplyr::filter(!is.na(Date)) %>% nrow()
       risk_ready <- dd_daily_n >= min_days_for_risk
       is_initial_mode <- !risk_ready
-      
       
       
       # 분석용 데이터 재읽기 + Return 계산
@@ -1102,89 +1233,6 @@ repeat {
             slice_min(Date, n = 1, with_ties = FALSE) %>%
             ungroup()
           
-          # p <- ggplot(dd_plot_base, aes(x = Date)) +
-          #   geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
-          #   geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
-          #   geom_smooth(
-          #     aes(y = sum_left),
-          #     method = "lm",
-          #     formula = y ~ x,
-          #     se = FALSE,
-          #     color = "orange",
-          #     linetype = "dashed",
-          #     linewidth = 1
-          #   ) +
-          #   geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
-          #   geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
-          #   geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
-          #   scale_color_gradient(
-          #     low  = "#D55E00",
-          #     high = "#0072B2",
-          #     name = "손익\n(단위:\n천만원)"
-          #   ) +
-          #   scale_x_date(
-          #     limits = common_date_range,
-          #     date_breaks = "2 months",
-          #     labels = scales::label_date_short(),
-          #     expand = c(0, 0)
-          #   ) +
-          #   scale_y_continuous(
-          #     name = "보유합계(천만원)",
-          #     sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
-          #   ) +
-          #   labs(
-          #     title = plot_title,
-          #     subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
-          #     x = NULL,
-          #     y = NULL
-          #   ) +
-          #   theme_minimal(base_size = 13) +
-          #   theme(
-          #     plot.title.position = "plot",
-          #     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-          #     plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
-          #     axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
-          #     legend.title = element_text(size = 9),
-          #     legend.text  = element_text(size = 8)
-          #   ) +
-          #   coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
-          #   annotate(
-          #     "text",
-          #     x = min(dd_plot_base$Date, na.rm = TRUE),
-          #     y = max(sum_left, na.rm = TRUE),
-          #     label = label_text,
-          #     hjust = 0,
-          #     vjust = 1,
-          #     size = 3.5,
-          #     color = "black"
-          #   ) +
-          #   annotate(
-          #     "label",
-          #     x = max(dd_plot_base$Date, na.rm = TRUE),
-          #     y = min(sum_left, na.rm = TRUE) * 1.02,
-          #     label = badge_text,
-          #     hjust = 1,
-          #     vjust = 0,
-          #     size = 5.5,
-          #     fontface = "bold",
-          #     fill = badge_color,
-          #     color = "white"
-          #   ) +
-          #   geom_text(
-          #     data = month_start_label,
-          #     aes(
-          #       x = Date,
-          #       y = sum_left,
-          #       label = paste0(round(Sum / 1e8, 1), "억")
-          #     ),
-          #     vjust = 4, # 양수이면 아래쪽으로 숫자 표시, 음수면 위쪽으로 표시
-          #     size = 3,
-          #     color = "black",
-          #     fontface = "bold",
-          #     inherit.aes = FALSE
-          #   ) 
-          # 
-          
           
           # ---------- 실제 Drawdown 기준 -5%, -10% 구간 음영 ----------
           dd_shade <- dd_plot_base %>%
@@ -1586,217 +1634,8 @@ repeat {
             )
           
           
-          # gauge_share_plot <- function(cur_val, max_val,
-          #                              title = "Gauge",
-          #                              cur_text = NULL,
-          #                              max_text = NULL,
-          #                              ring_width = 6) {
-          #   
-          #   if (is.na(cur_val) || is.na(max_val) || max_val == 0) stop("cur/max 값이 NA이거나 max_val이 0입니다.")
-          #   
-          #   ratio <- abs(cur_val) / abs(max_val)
-          #   ratio <- max(0, min(1, ratio))
-          #   
-          #   # 0%(12시) -> 100%(3시): x=-pi/2 -> x=-pi
-          #   needle_x <- -pi/2 - ratio*(pi/2)
-          #   
-          #   seg <- data.frame(
-          #     x0  = c(-pi/2, -2*pi/3, -5*pi/6),
-          #     x1  = c(-2*pi/3, -5*pi/6, -pi),
-          #     y   = 1,
-          #     col = c("#9BE37D", "#FFD84D", "#FFA24D")
-          #   )
-          #   
-          #   # 허브/바늘
-          #   hub_y <- 0
-          #   needle_base <- data.frame(x = needle_x, y0 = 0.0, y1 = 0.3)
-          #   needle_tip  <- data.frame(x = needle_x, y0 = 0.12, y1 = 0.95)
-          #   
-          #   if (is.null(cur_text)) cur_text <- as.character(cur_val)
-          #   if (is.null(max_text)) max_text <- as.character(max_val)
-          #   
-          #   # ✅ 우측 텍스트(게이지 바로 오른쪽, 같은 패널 안)
-          #   side_txt <- sprintf("Current : %s\nMax(100%%): %s", cur_text, max_text)
-          #   
-          #   # share label at needle
-          #   share_label <- scales::percent(ratio, accuracy = 0.01)
-          #   
-          #   
-          #   
-          #   # ---------------------------------------------------------
-          #   # 1) 게이지 그림 
-          #   # ---------------------------------------------------------
-          #   p_gauge <- ggplot2::ggplot() +
-          #     ggplot2::geom_segment(
-          #       data = seg,
-          #       ggplot2::aes(x = x0, y = y, xend = x1, yend = y, colour = col),
-          #       # linewidth = ring_width, lineend = "round"
-          #       linewidth = ring_width, lineend = "butt"
-          #     ) +
-          #     ggplot2::scale_colour_identity() +
-          #     ggplot2::geom_segment(
-          #       data = needle_base,
-          #       ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
-          #       # linewidth = 3.0, lineend = "round"
-          #       linewidth = 3.0, lineend = "butt"
-          #     ) +
-          #     ggplot2::geom_segment(
-          #       data = needle_tip,
-          #       ggplot2::aes(x = x, y = y0, xend = x, yend = y1),
-          #       linewidth = 1.3,
-          #       arrow = grid::arrow(length = grid::unit(0.04, "npc"), type = "closed")
-          #     ) +
-          #     ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 3.4) +
-          #     ggplot2::geom_point(ggplot2::aes(x = -pi/2, y = 0), size = 1.2) +
-          #     ggplot2::annotate("text", x = -pi/2,   y = 1.14, label = "0%",   size = 3.0, color="gray") +
-          #     ggplot2::annotate("text", x = -3*pi/4, y = 1.10, label = "50%",  size = 3.0, color="gray") +
-          #     ggplot2::annotate("text", x = -pi,     y = 1.10, label = "100%", size = 3.0, color="gray") +
-          #     ggplot2::annotate(
-          #       "text",
-          #       x = needle_x, y = 1.18,
-          #       label = share_label,
-          #       size = 3.3,
-          #       fontface = "bold.italic",
-          #       colour = "blue"
-          #     ) +
-          #     # ✅ 타이틀을 게이지 내부 좌상단에 고정(패널의 좌측/우측 헷갈림 제거)
-          #     ggplot2::annotate(
-          #       "text",
-          #       x = -pi, y = 1.22,
-          #       label = title,
-          #       hjust = 0, vjust = 1,
-          #       size = 4.2, fontface = "bold"
-          #     ) +
-          #     ggplot2::coord_polar(theta = "x", start = pi, direction = 1, clip = "off") +
-          #     ggplot2::xlim(-pi, 0) +
-          #     ggplot2::ylim(0, 1.25) +
-          #     ggplot2::theme_void() +
-          #     ggplot2::theme(
-          #       plot.margin = ggplot2::margin(2, 0, 2, 0)
-          #     )
-          #   
-          #   # ---------------------------------------------------------
-          #   # 2) 우측 텍스트 패널 (게이지 바로 오른쪽)
-          #   # ---------------------------------------------------------
-          #   p_text <- ggplot2::ggplot() +
-          #     ggplot2::theme_void() +
-          #     ggplot2::annotate(
-          #       "text",
-          #       x = -0.9, y = 0,      # 텍스트 위치
-          #       label = side_txt,
-          #       hjust = 0, vjust = 0.5,
-          #       size = 3.0,
-          #       colour = "blue",
-          #       fontface = "italic",
-          #       lineheight = 0.95
-          #     ) +
-          #     ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
-          #     ggplot2::theme(plot.margin = ggplot2::margin(2, 0, 2, 0))
-          #   
-          #   # ✅ “한 카드”로 결합: 게이지(좌) + 텍스트(우)
-          #   p_gauge + p_text + patchwork::plot_layout(widths = c(1.55, 0.70))
-          # }
-          # 
-          # gauge_with_left_title <- function(gauge_plot, title_left,
-          #                                   left_width = 0.55, right_width = 1.45) {
-          #   p_left <- ggplot2::ggplot() +
-          #     ggplot2::theme_void() +
-          #     ggplot2::annotate("text", x = 0, y = 0,
-          #                       label = title_left,
-          #                       hjust = 0, vjust = 0.5,
-          #                       size = 5, fontface = "bold") +
-          #     ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(-1, 1), clip = "off") +
-          #     ggplot2::theme(plot.margin = ggplot2::margin(6, 2, 6, 8))
-          #   
-          #   p_left + gauge_plot +
-          #     patchwork::plot_layout(widths = c(left_width, right_width))
-          # }
-          # 
-          # build_risk_gauge_row <- function(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63) {
-          #   
-          #   cur_sum_amt <- as.numeric(today_sum)
-          #   
-          #   dd_vec <- dd2$DD
-          #   dd_vec <- dd_vec[is.finite(dd_vec)]
-          #   if (length(dd_vec) < 5) {
-          #     return(ggplot2::ggplot() + ggplot2::theme_void() +
-          #              ggplot2::annotate("text", x=0, y=0, label="DD 데이터 부족", size=5))
-          #   }
-          #   
-          #   cur_dd <- as.numeric(today_dd)
-          #   mdd    <- as.numeric(min(dd_vec, na.rm = TRUE))
-          #   
-          #   cvar_ratio <- NA_real_
-          #   if (!is.na(cvar_amt) && is.finite(cvar_amt) && is.finite(cur_sum_amt) && cur_sum_amt > 0) {
-          #     cvar_ratio <- -abs(as.numeric(cvar_amt) / cur_sum_amt)
-          #   }
-          #   
-          #   # cur_dur <- as.integer(consecutive_days)
-          #   # Drawdown 연속일(=현재 DD 구간의 길이)
-          #   if (length(dd_vec) == 0 || is.na(tail(dd_vec, 1))) {
-          #     cur_dur <- NA_integer_
-          #   } else if (tail(dd_vec, 1) >= 0) {
-          #     cur_dur <- 0L
-          #   } else {
-          #     i <- length(dd_vec)
-          #     cur_dur <- 0L
-          #     while (i >= 1 && !is.na(dd_vec[i]) && dd_vec[i] < 0) {
-          #       cur_dur <- cur_dur + 1L
-          #       i <- i - 1
-          #     }
-          #   }
-          #   
-          #   r <- rle(dd_vec < 0)
-          #   max_dur <- if (any(r$values)) max(r$lengths[r$values]) else 0L
-          #   if (max_dur == 0) max_dur <- 1L
-          #   
-          #   ui_roll <- zoo::rollapply(
-          #     dd_vec, width = ui_win, align = "right", fill = NA_real_,
-          #     FUN = function(x) sqrt(mean(x^2, na.rm = TRUE))
-          #   )
-          #   cur_ui <- as.numeric(tail(ui_roll, 1))
-          #   max_ui <- suppressWarnings(max(as.numeric(ui_roll), na.rm = TRUE))
-          #   if (!is.finite(max_ui) || max_ui == 0) max_ui <- 1e-9
-          #   
-          #   g1 <- gauge_share_plot(cur_dd, mdd,
-          #                          title    = "DD vs MDD",
-          #                          cur_text = scales::percent(cur_dd, accuracy = 0.01),
-          #                          max_text = scales::percent(mdd,    accuracy = 0.01)
-          #   )
-          #   
-          #   if (is.na(cvar_ratio)) {
-          #     g2 <- ggplot2::ggplot() + ggplot2::theme_void() +
-          #       ggplot2::annotate("text", x=0, y=0, label="CVaR 데이터 없음", size=5)
-          #   } else {
-          #     g2 <- gauge_share_plot(cur_dd, cvar_ratio,
-          #                            title    = "DD vs CVaR",
-          #                            cur_text = scales::percent(cur_dd, accuracy = 0.01),
-          #                            max_text = scales::percent(cvar_ratio, accuracy = 0.01)
-          #     )
-          #   }
-          #   
-          #   g3 <- gauge_share_plot(cur_dur, max_dur,
-          #                          title    = "DD Duration",
-          #                          cur_text = paste0(cur_dur, "D"),
-          #                          max_text = paste0(max_dur, "D")
-          #   )
-          #   
-          #   g4 <- gauge_share_plot(cur_ui, max_ui,
-          #                          title    = paste0("Ulcer(", ui_win, "D)"),
-          #                          cur_text = ifelse(is.na(cur_ui), "NA", scales::percent(cur_ui, accuracy = 0.01)),
-          #                          max_text = scales::percent(max_ui, accuracy = 0.01)
-          #   )
-          #   
-          #   patchwork::wrap_plots(g1, g2, g3, g4, nrow = 1)
-          # }
-          # 
-          # g_row <- build_risk_gauge_row(today_dd, consecutive_days, cvar_amt, dd2, today_sum, ui_win = 63)
-          # 
-          
-          
-          
           # =========================================================
-          # 게이지 함수 전체 교체 블록
+          # 게이지 함수 
           # =========================================================
           
           gauge_share_plot <- function(cur_val, max_val,
