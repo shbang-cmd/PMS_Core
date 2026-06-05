@@ -229,7 +229,7 @@ cat("메일 작성 시작.\n")
 to <- "seminago@naver.com"  # 수신 메일 지정 (필요시 벡터로 다중 수신)
 # 코드를 따라하시는 위의 수신인 메일주소를 반드시 바꿀 것(소중한 자산 포트폴리오 현황을 필자에게 보고하시는 일이 없도록^^)
                    
-subject <- sprintf("[PMS 자산현황 AI보고] %s", format(now_kst, "%Y-%m-%d"))
+subject <- sprintf("[PMS 자산현황 AI보고 %d] %s", floor(tail(read.csv("C:\\PMS_Core\\output_sum.csv")[[2]], 1) / 1000000), format(now_kst, "%Y-%m-%d"))
 
 email <- compose_email(
   body = md(glue("
