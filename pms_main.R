@@ -2222,31 +2222,27 @@ repeat {
   
   
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
+  
   print(
     rt %>%
       mutate(
         종목그룹 = case_when(
-          # 나스닥100
           grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "나스닥100ETF",
           
-          # S&P500
           grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "미국S&P500ETF",
           
-          # 채권형 ETF
           grepl("KODEX종합채권액티브ETF", 종목명) |
             grepl("KODEX미국30년국채액티브", 종목명) |
             grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
             grepl("TIGER미국테크TOP10채권혼합", 종목명) |
             grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "채권형ETF",
           
-          # 현금성 ETF ⭐
           grepl("KODEX 머니마켓액티브", 종목명) |
             grepl("TIGER KOFR금리액티브", 종목명) |
             grepl("RISE KOFR금리액티브", 종목명) |
             grepl("^BIL$", 종목명) |
             grepl("^SGOV$", 종목명) ~ "현금성ETF",
           
-          # 기타
           TRUE ~ 종목명
         )
       ) %>%
@@ -2260,7 +2256,13 @@ repeat {
       ) %>%
       mutate(
         수익률 = round(총수익금 / 총매수금 * 100, 2),
-        비중 = round(총평가금 / sum(총평가금) * 100, 2)
+        비중 = round(총평가금 / sum(총평가금, na.rm = TRUE) * 100, 2),
+        수익기여도 = round(총수익금 / sum(총수익금, na.rm = TRUE) * 100, 2),
+        효율 = round(수익기여도 / 비중, 2)
+        # 효율 해석
+        # 1보다 크면: 비중 대비 수익기여도가 높음
+        # 1이면: 평균 수준
+        # 1보다 작으면: 비중 대비 수익기여도가 낮음
       ) %>%
       filter(비중 >= 1) %>%
       arrange(desc(총평가금)) %>%
