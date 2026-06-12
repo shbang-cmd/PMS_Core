@@ -11,7 +11,8 @@
 # [입력 파일]
 #         input_stock.csv    : 한국주식
 #         input_stock_us.csv : 미국주식
-#         output_sum.csv                      : 전일 평가액총액, 수익금(입력이자 출력파일)
+#         output_sum.csv     : 전일 평가액총액, 수익금(입력이자 출력파일)
+#         dividend.csv       : 수기로 입력한 연초부터 현재까지 배당금 내역(귀찮으면 안만들어도 됨)
 #
 # [출력 파일]
 #         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
