@@ -29,6 +29,11 @@
 
 # 주의 : 표본수가 100일 미만이면 그래프는 만들지 않음 -> 100일 이상 표본수(누적일) 필요, 단, 엑셀 출력은 계속 만듦
 
+# 마이너 업데이트 기록
+# 2026-06-12 금융소득종합과세자(연간 금융소득 2천만원 초과)가 되는지 여부를 미리 알수 있는 텍스트 그래프 추가
+#            같은 폴더에 dividend.csv를 만들고 '날짜,종목명,통화,배당금,환율' 순서로 입력하여 수기로 관리
+#            그렇게 하면 연말까지 예상 배당금을 미리 알 수 있음(분리과세 배당도 있으므로 오차 감안하여 단순참고)
+
 # =========================================================
 # 패키지 설치/로드
 # =========================================================
@@ -553,6 +558,137 @@ stock_change_msg <- make_stock_change_message(change_all)
 
 cat(stock_change_msg)
 
+
+# =========================================================
+# 금융소득종합과세 체크 함수
+# - dividend.csv의 배당금은 세후 입금액 기준이라고 가정
+# - 세전 환산 후 2천만원 기준과 비교
+# - 목적 : 금융소득종합과세자가 되지 않도록 예상 세전 배당금이 2천만원 초과하는지 예측
+# =========================================================
+print_financial_income_gauge <- function(
+    file_path = "dividend.csv",
+    limit_dividend = 20000000,
+    tax_rate = 0.154,
+    width = 50,
+    encoding = "UTF-8"
+) {
+  
+  library(readr)
+  library(dplyr)
+  library(lubridate)
+  
+  if (!file.exists(file_path)) {
+    cat("\n[금융소득종합과세 CHECK] dividend.csv 파일이 없어 건너뜁니다.\n")
+    return(invisible(NULL))
+  }
+  
+  df <- read_csv(
+    file_path,
+    comment = "#",
+    locale = locale(encoding = encoding),
+    show_col_types = FALSE
+  )
+  
+  if (nrow(df) == 0) {
+    cat("\n[금융소득종합과세 CHECK] 배당 데이터가 없습니다.\n")
+    return(invisible(NULL))
+  }
+  
+  df <- df %>%
+    mutate(
+      날짜 = as.Date(날짜),
+      배당금 = as.numeric(배당금),
+      환율 = as.numeric(환율),
+      세후배당금_KRW환산 = 배당금 * 환율,
+      세전배당금_KRW환산 = 세후배당금_KRW환산 / (1 - tax_rate)
+    )
+  
+  current_gross <- sum(df$세전배당금_KRW환산, na.rm = TRUE)
+  current_net   <- sum(df$세후배당금_KRW환산, na.rm = TRUE)
+  
+  days_passed <- yday(Sys.Date())
+  expected_gross <- current_gross * 365 / days_passed
+  
+  current_rate  <- current_gross / limit_dividend * 100
+  expected_rate <- expected_gross / limit_dividend * 100
+  
+  remain <- limit_dividend - expected_gross
+  
+  status <- case_when(
+    expected_rate < 70  ~ "안전",
+    expected_rate < 90  ~ "적정",
+    expected_rate < 100 ~ "경고(고배당주 매수 주의)",
+    TRUE                ~ "위험(더이상 고배당주 매수 금지)"
+  )
+  
+  current_m  <- round(current_gross / 1e6, 1)
+  expected_m <- round(expected_gross / 1e6, 1)
+  net_m      <- round(current_net / 1e6, 1)
+  limit_m    <- round(limit_dividend / 1e6, 1)
+  
+  current_pos <- round(min(current_gross / limit_dividend, 1.2) * width)
+  expected_pos <- round(min(expected_gross / limit_dividend, 1.2) * width)
+  
+  current_pos <- max(current_pos, 1)
+  expected_pos <- max(expected_pos, 1)
+  
+  line <- paste(rep("-", width), collapse = "")
+  
+  cat("\n====================================================\n")
+  cat("금융소득종합과세 체크(세전 배당 기준 : 분리과세배당도 있으므로 오차는 있음을 감안)\n\n")
+  
+  cat("0 ", line, " ", limit_m, "백만원\n", sep = "")
+  
+  cat(
+    paste0(
+      strrep(" ", current_pos),
+      "▲ 현재 [", current_m, "백만원]\n"
+    )
+  )
+  
+  cat(
+    paste0(
+      strrep(" ", expected_pos),
+      "▲ 연말예상 [", expected_m, "백만원]\n\n"
+    )
+  )
+  
+  cat(sprintf(
+    "현재 누적 세전 : %.1f백만원 / %.1f백만원 (%.1f%%)\n",
+    current_m, limit_m, current_rate
+  ))
+  
+  cat(sprintf(
+    "현재 누적 세후 : %.1f백만원\n",
+    net_m
+  ))
+  
+  cat(sprintf(
+    "연말 예상 세전 : %.1f백만원 / %.1f백만원 (%.1f%%)\n",
+    expected_m, limit_m, expected_rate
+  ))
+  
+  if (remain >= 0) {
+    cat(sprintf("예상 여유      : %.1f백만원\n", remain / 1e6))
+  } else {
+    cat(sprintf("예상 초과      : %.1f백만원\n", abs(remain) / 1e6))
+  }
+  
+  cat("상태           :", status, "\n")
+  cat("====================================================\n\n")
+  
+  return(invisible(list(
+    current_gross = current_gross,
+    current_net = current_net,
+    expected_gross = expected_gross,
+    current_rate = current_rate,
+    expected_rate = expected_rate,
+    remain = remain,
+    status = status
+  )))
+}
+
+print_financial_income_gauge("c:\\PMS_Core\\dividend.csv")  # 배당파일이 없으면 무시하고 건너뜀
 
 
 # =========================================================
