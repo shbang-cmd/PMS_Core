@@ -1435,6 +1435,9 @@ repeat {
             "3.5% : ", format(round(swr35_monthly / 10000), big.mark = ","), "만원/월\n",
             "4.0% : ", format(round(swr4_monthly / 10000), big.mark = ","), "만원/월"
           )
+          # 설명 : 현재 평가액을 기준으로 FIRE해서 운용한다면 월 현금흐름이 얼마나 될지 표기
+          #        연 3.0%, 연 3.5%, 연 4.0%인 경우 월 현금흐름이 얼마나 예상되는지 표시
+          
           
           # fire_y <- min(sum_left, na.rm = TRUE) * 1.13
           # badge_y <- min(sum_left, na.rm = TRUE) * 1.02
