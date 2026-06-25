@@ -985,6 +985,7 @@ repeat {
           paste0(substr(dt_fn$종목명, 1, 10), "\n", substr(dt_fn$종목명, 11, 999)),
           dt_fn$종목명
         )
+        
         treemap(dt_fn, 
                 index="종목명_tm", 
                 vSize="한화평가금", 
@@ -993,8 +994,41 @@ repeat {
                 border.col = "white",
                 inflate.labels = TRUE,
                 lowerbound.cex.labels = 0.5)
-        showtext_auto()
         
+
+        # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
+        treemap(
+          rt %>%
+            mutate(
+              종목그룹 = case_when(
+                grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
+
+                grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "S&P500",
+
+                grepl("KODEX종합채권액티브ETF", 종목명) |
+                  grepl("KODEX미국30년국채액티브", 종목명) |
+                  grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
+                  grepl("TIGER미국테크TOP10채권혼합", 종목명) |
+                  grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "BOND",
+
+                grepl("KODEX 머니마켓액티브", 종목명) |
+                  grepl("TIGER KOFR금리액티브", 종목명) |
+                  grepl("RISE KOFR금리액티브", 종목명) |
+                  grepl("^BIL$", 종목명) |
+                  grepl("^SGOV$", 종목명) ~ "CASH_LIKE",
+
+                TRUE ~ 종목명
+              )
+            ),
+          index="종목그룹",
+          vSize="한화평가금",
+          title="종목그룹 트리맵",
+          palette = "Set3",
+          border.col = "white",
+          inflate.labels = TRUE,
+          lowerbound.cex.labels = 0.5
+        )
+  
         
         # 1일 평균 증가액
         fit <- lm(sum_left ~ as.numeric(dd_plot_base$Date), data = dd_plot_base)
@@ -1347,12 +1381,10 @@ repeat {
             sprintf("%.1f", today_tsum * as.numeric(current_weights['GOLD']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['IEF']/1e8)), " : ",
             sprintf("%.1f", today_tsum * as.numeric(current_weights['CASH']/1e8)), "\n"
-            
           )
           
           common_date_range <- range(dd_plot_base$Date, na.rm = TRUE)
           common_date_range[2] <- common_date_range[2] + 2
-          
           
           
           # 창1 갱신
@@ -1438,136 +1470,12 @@ repeat {
           # 설명 : 현재 평가액을 기준으로 FIRE해서 운용한다면 월 현금흐름이 얼마나 될지 표기
           #        연 3.0%, 연 3.5%, 연 4.0%인 경우 월 현금흐름이 얼마나 예상되는지 표시
           
-          
-          # fire_y <- min(sum_left, na.rm = TRUE) * 1.13
-          # badge_y <- min(sum_left, na.rm = TRUE) * 1.02
-          
           fire_x <- min(dd_plot_base$Date, na.rm = TRUE) +
             (max(dd_plot_base$Date, na.rm = TRUE) -
                min(dd_plot_base$Date, na.rm = TRUE)) / 2
           
           fire_y <- min(sum_left, na.rm = TRUE) * 1  # 1.03보다 낮은 위치에 표시
           
-          # p <- ggplot(dd_plot_base, aes(x = Date)) +
-          #   
-          #   # 선형회귀선 대비 +5% 이상: 희미한 붉은색
-          #   geom_rect(
-          #     data = over_shade,
-          #     aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-          #     inherit.aes = FALSE,
-          #     fill = "mistyrose",
-          #     alpha = 0.35
-          #   ) +
-          #   
-          #   # DD -5% 이하 구간
-          #   geom_rect(
-          #     data = dd_shade %>% filter(DD_zone == "DD_5"),
-          #     aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-          #     inherit.aes = FALSE,
-          #     fill = "gray80",
-          #     alpha = 0.18
-          #   ) +
-          #   
-          #   # DD -10% 이하 구간
-          #   geom_rect(
-          #     data = dd_shade %>% filter(DD_zone == "DD_10"),
-          #     aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-          #     inherit.aes = FALSE,
-          #     fill = "gray55",
-          #     alpha = 0.25
-          #   ) +
-          #   
-          #   geom_point(aes(y = sum_left, color = Profit / 1e7), size = 5, na.rm = TRUE) +
-          #   geom_line(aes(y = sum_left, group = 1), color = "gray", na.rm = TRUE) +
-          #   
-          #   geom_smooth(
-          #     aes(y = sum_left),
-          #     method = "lm",
-          #     formula = y ~ x,
-          #     se = FALSE,
-          #     color = "orange",
-          #     linetype = "dashed",
-          #     linewidth = 1
-          #   ) +
-          #   
-          #   geom_line(aes(y = a * ret_right + b), color = "green", linewidth = 1, na.rm = TRUE) +
-          #   geom_point(aes(y = a * ret_right + b), color = "green", size = 2, na.rm = TRUE) +
-          #   geom_hline(yintercept = b, color = "yellow2", linewidth = 1.2, alpha = 0.6) +
-          #   
-          #   scale_color_gradient(
-          #     low  = "#D55E00",
-          #     high = "#0072B2",
-          #     name = "손익\n(단위:\n천만원)"
-          #   ) +
-          #   
-          #   scale_x_date(
-          #     limits = common_date_range,
-          #     date_breaks = "2 months",
-          #     labels = scales::label_date_short(),
-          #     expand = c(0, 0)
-          #   ) +
-          #   
-          #   scale_y_continuous(
-          #     name = "보유합계(천만원)",
-          #     sec.axis = sec_axis(~ (. - b) / a, name = "일간수익률(%)")
-          #   ) +
-          #   
-          #   labs(
-          #     title = plot_title,
-          #     subtitle = paste0("USD/KRW ", exchange_rate, " (", exchange_diff, ")"),
-          #     x = NULL,
-          #     y = NULL
-          #   ) +
-          #   
-          #   theme_minimal(base_size = 13) +
-          #   theme(
-          #     plot.title.position = "plot",
-          #     plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-          #     plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray30"),
-          #     axis.title.y.right = element_text(color = "green", size = 9, face = "bold"),
-          #     legend.title = element_text(size = 9),
-          #     legend.text  = element_text(size = 8)
-          #   ) +
-          #   
-          #   coord_cartesian(ylim = c(sum_range[1], sum_range[2])) +
-          #   
-          #   annotate(
-          #     "text",
-          #     x = min(dd_plot_base$Date, na.rm = TRUE),
-          #     y = max(sum_left, na.rm = TRUE),
-          #     label = label_text,
-          #     hjust = 0,
-          #     vjust = 1,
-          #     size = 3.5,
-          #     color = "black"
-          #   ) +
-          #   
-          #   annotate(
-          #     "label",
-          #     x = max(dd_plot_base$Date, na.rm = TRUE),
-          #     y = min(sum_left, na.rm = TRUE) * 1.02,
-          #     label = badge_text,
-          #     hjust = 1,
-          #     vjust = 0,
-          #     size = 5.5,
-          #     fontface = "bold",
-          #     fill = badge_color,
-          #     color = "white"
-          #   ) +
-          #   
-          #   geom_text(
-          #     data = month_start_label,
-          #     aes(
-          #       x = Date,
-          #       y = sum_left,
-          #       label = paste0(round(Sum / 1e8, 1), "억")
-          #     ),
-          #     vjust = 4,
-          #     size = 3,
-          #     color = "black",
-          #     fontface = "bold",
-          #     inherit.aes = FALSE
-          #   )
           
           p <- ggplot(dd_plot_base, aes(x = Date)) +
             
@@ -1659,21 +1567,6 @@ repeat {
               size = 3.5,
               color = "black"
             ) +
-            
-            # FIRE STATUS 박스
-            # annotate(
-            #   "label",
-            #   x = max(dd_plot_base$Date, na.rm = TRUE),
-            #   y = fire_y,
-            #   label = fire_text,
-            #   hjust = 1,
-            #   vjust = 0,
-            #   size = 3.8,
-            #   fontface = "bold",
-            #   fill = "lightyellow",
-            #   color = "black",
-            #   label.size = 0.4
-            # ) +
             
             annotate(
               "text",
@@ -2299,8 +2192,6 @@ repeat {
           )
           
           
-          
-          
           if (risk_ready) {
             combined_plot <- (p / p_mid / p_dd / p_weight_bar / g_row) +
               patchwork::plot_layout(heights = c(2.2, 1, 1, 0.40, 0.65))
@@ -2374,7 +2265,6 @@ repeat {
   
   
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
-  
   print(
     rt %>%
       mutate(
