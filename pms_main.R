@@ -995,40 +995,40 @@ repeat {
                 inflate.labels = TRUE,
                 lowerbound.cex.labels = 0.5)
         
-
-        # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
-        treemap(
-          rt %>%
-            mutate(
-              종목그룹 = case_when(
-                grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
-
-                grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "S&P500",
-
-                grepl("KODEX종합채권액티브ETF", 종목명) |
-                  grepl("KODEX미국30년국채액티브", 종목명) |
-                  grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
-                  grepl("TIGER미국테크TOP10채권혼합", 종목명) |
-                  grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "BOND",
-
-                grepl("KODEX 머니마켓액티브", 종목명) |
-                  grepl("TIGER KOFR금리액티브", 종목명) |
-                  grepl("RISE KOFR금리액티브", 종목명) |
-                  grepl("^BIL$", 종목명) |
-                  grepl("^SGOV$", 종목명) ~ "CASH_LIKE",
-
-                TRUE ~ 종목명
-              )
-            ),
-          index="종목그룹",
-          vSize="한화평가금",
-          title="종목그룹 트리맵",
-          palette = "Set3",
-          border.col = "white",
-          inflate.labels = TRUE,
-          lowerbound.cex.labels = 0.5
-        )
-  
+        
+        # # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
+        # treemap(
+        #   rt %>%
+        #     mutate(
+        #       종목그룹 = case_when(
+        #         grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
+        #         
+        #         grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "S&P500",
+        #         
+        #         grepl("KODEX종합채권액티브ETF", 종목명) |
+        #           grepl("KODEX미국30년국채액티브", 종목명) |
+        #           grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
+        #           grepl("TIGER미국테크TOP10채권혼합", 종목명) |
+        #           grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "BOND",
+        #         
+        #         grepl("KODEX 머니마켓액티브", 종목명) |
+        #           grepl("TIGER KOFR금리액티브", 종목명) |
+        #           grepl("RISE KOFR금리액티브", 종목명) |
+        #           grepl("^BIL$", 종목명) |
+        #           grepl("^SGOV$", 종목명) ~ "CASH_LIKE",
+        #         
+        #         TRUE ~ 종목명
+        #       )
+        #     ),
+        #   index="종목그룹",
+        #   vSize="한화평가금",
+        #   title="종목그룹 트리맵",
+        #   palette = "Set3",
+        #   border.col = "white",
+        #   inflate.labels = TRUE,
+        #   lowerbound.cex.labels = 0.5
+        # )
+        
         
         # 1일 평균 증가액
         fit <- lm(sum_left ~ as.numeric(dd_plot_base$Date), data = dd_plot_base)
@@ -2244,6 +2244,12 @@ repeat {
       
       warnings_vec <- if (exists("warnings_vec")) warnings_vec else character(0)
       errors_vec   <- if (exists("errors_vec"))   errors_vec   else character(0)
+      
+      
+      
+      if (!exists("cvar_amt"))
+        cvar_amt <- NA_real_
+      
       
       prompt_text <- make_gemini_prompt_pms(
         dd = dd,
