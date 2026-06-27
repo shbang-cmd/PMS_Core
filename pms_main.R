@@ -118,7 +118,7 @@ font_add(family = "malgun", regular = "C:\\Windows\\Fonts\\malgun.ttf")
 showtext_auto()
 
 # 환율 정보 변후 초기화
-#spx <- NA
+spx <- NA
 spx_val <- if(is.list(spx)) spx$spx_value else "(미수집)" 
 spx_diff <- if(is.list(spx)) spx$spx_diff_label else "-" 
 spx_pct <- if(is.list(spx)) spx$spx_pct else NA_real_
@@ -2205,6 +2205,7 @@ repeat {
           suppressMessages(print(combined_plot))
           
           # PDF 저장
+          showtext_auto()
           date_str <- format(Sys.Date(), "%Y%m%d")
           out_dir  <- "reports"
           dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -2250,7 +2251,6 @@ repeat {
       if (!exists("cvar_amt"))
         cvar_amt <- NA_real_
       
-      
       prompt_text <- make_gemini_prompt_pms(
         dd = dd,
         sum_xts = sum_xts,
@@ -2268,7 +2268,6 @@ repeat {
   }
   
   if (!REPEAT_FLAG) break
-  
   
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
   print(
