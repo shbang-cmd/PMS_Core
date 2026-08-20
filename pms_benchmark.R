@@ -1,4 +1,4 @@
-# PMS vs S&P500/NASDAQ100 Benchmark 서로 비교해보기 위함
+# 2026.08.20 마이너 버그픽스 : sqlite파일이 업데이트되지 않는 현상 해결
 
 library(dplyr)
 library(lubridate)
@@ -85,6 +85,9 @@ get_naver_daily_prices <- function(ticker, years_back = 3, max_pages = 150) {
       url,
       httr::add_headers(`User-Agent` = "Mozilla/5.0")
     )
+
+    # HTTP 오류(403, 404, 500 등)가 있으면 즉시 중단
+    httr::stop_for_status(resp)
     
     html <- rvest::read_html(
       httr::content(resp, as = "text", encoding = "EUC-KR")
@@ -188,26 +191,48 @@ save_prices_to_db <- function(con, ticker, years_back = 3) {
 }
 
 
-ensure_price_exists <- function(con, ticker) {
+ensure_price_updated <- function(con, ticker, years_back = 3) {
   
   code <- clean_naver_code(ticker)
   
-  n <- dbGetQuery(
+  info <- dbGetQuery(
     con,
     "
-    SELECT COUNT(*) AS n
+    SELECT COUNT(*) AS n, MAX(date) AS last_date
     FROM stock_daily_prices
     WHERE ticker = ?
     ",
     params = list(code)
-  )$n[1]
+  )
   
-  if (n == 0) {
+  n <- info$n[1]
+  last_date <- info$last_date[1]
+  
+  # 데이터가 아예 없으면 최근 years_back년 전체 다운로드
+  if (n == 0 || is.na(last_date) || is.null(last_date)) {
     cat(code, " 데이터가 없어 새로 다운로드합니다.\n")
-    save_prices_to_db(con, code, years_back = 3)
-  } else {
-    cat(code, " 데이터 존재: ", n, "건\n")
+    save_prices_to_db(con, code, years_back = years_back)
+    return(invisible(TRUE))
   }
+  
+  last_date <- as.Date(last_date)
+  today <- Sys.Date()
+  
+  cat(code, " DB 데이터: ", n, "건 | 마지막 날짜: ",
+      as.character(last_date), "\n", sep = "")
+  
+  # 핵심 수정:
+  # 예전 코드는 데이터가 한 건이라도 있으면 아무 것도 하지 않았음.
+  # 이제 마지막 저장일이 오늘보다 과거이면 네이버 데이터를 다시 읽어
+  # INSERT OR REPLACE 방식으로 최신 거래일까지 갱신함.
+  if (last_date < today) {
+    cat(code, " 최신 시세를 확인하여 DB를 업데이트합니다.\n")
+    save_prices_to_db(con, code, years_back = years_back)
+  } else {
+    cat(code, " DB가 오늘 날짜 기준 최신 상태입니다.\n")
+  }
+  
+  invisible(TRUE)
 }
 
 get_price_history <- function(con, ticker) {
@@ -239,7 +264,7 @@ get_price_history <- function(con, ticker) {
 tickers <- c("379800", "379810") # KODEX S&P500, KODEX NASDAQ100
 
 for (ticker in tickers) {
-  ensure_price_exists(con, ticker)
+  ensure_price_updated(con, ticker, years_back = 3)
 }
 
 sp500 <- get_price_history(con, "379800") %>%
