@@ -1,325 +1,1488 @@
 # quantmod패키지의 getSymbols()함수가 안되는 경우가 있어 네이버 크롤링으로 수정(2026.03.19)
-# SSL에러로 인해 웹조회방식으로 바꿈(2026.5.11)
+# SSL에러로 인해 웹조회방식으로 바꿈(2026.05.11)
+# 네이버 증권홈페이지 개편으로 조회방식 수정(2026.09.11)
 
 library(quantmod)
 library(writexl)
 library(dplyr)
 library(tidyverse)
-library(rvest)
 library(httr)
 library(readr)
 library(purrr)
 library(stringr)
+library(jsonlite)
+library(ggplot2)
 
-# # SSL 인증서 검증을 끕니다 (0 또는 FALSE)
-# set_config(config(ssl_verifypeer = 0L))
 
-# 오늘의 날짜 문자열 생성
+# ============================================================
+# 오늘 날짜
+# ============================================================
+
 today <- format(Sys.Date(), "%Y-%m-%d")
 
-# # 깃허브에 저장된 주식 정보를 가져오는 경우(public repository)
-# 파일 형식 : raw.githubusercontent.com/{사용자아이디}/{프로젝트명}/main/{파일명}
-# url <- "https://raw.githubusercontent.com/shbang-cmd/stock_eval/main/input_stock_us.csv"
-# data_en <- read_csv(url, comment = "#", locale = locale(encoding = "UTF-8"), show_col_types = FALSE)
 
-# 로컬하드에 저장된 input_stock.csv 를 가져오는 경우
-full_path <- normalizePath(file.path(getwd(), "input_stock_us.csv"), winslash = "/", mustWork = FALSE)
+# ============================================================
+# input_stock_us.csv 읽기
+# ============================================================
 
-data_en <- read_csv(full_path,
-                    comment = "#",  # 맨앞이 #으로 시작하면 무시함
-                    locale = locale(encoding = "UTF-8"),
-                    show_col_types = FALSE)
+# # 깃허브에 저장된 주식 정보를 가져오는 경우
+#
+# url <- paste0(
+#   "https://raw.githubusercontent.com/",
+#   "shbang-cmd/stock_eval/main/input_stock_us.csv"
+# )
+#
+# data_en <- read_csv(
+#   url,
+#   comment = "#",
+#   locale = locale(encoding = "UTF-8"),
+#   show_col_types = FALSE
+# )
 
 
-output_file <- paste(paste("output_stock_us_", today, sep = ""), ".xlsx", sep = "") # 출력파일명 뒤에 날짜삽입
+# 로컬 하드디스크에서 읽기
 
-# Check its existence
+full_path <- normalizePath(
+  file.path(
+    getwd(),
+    "input_stock_us.csv"
+  ),
+  winslash = "/",
+  mustWork = FALSE
+)
+
+
+data_en <- read_csv(
+  full_path,
+  comment = "#",
+  locale = locale(encoding = "UTF-8"),
+  show_col_types = FALSE
+)
+
+
+# 실제 미국주식 보유 행 수
+n_stock <- nrow(data_en)
+
+
+# ============================================================
+# 출력 파일
+# ============================================================
+
+output_file <- paste0(
+  "output_stock_us_",
+  today,
+  ".xlsx"
+)
+
+
 if (file.exists(output_file)) {
-  file.remove(output_file) # 파일이 이미 존재하면 지운다.
+  
+  file.remove(output_file)
+  
 }
 
 
-# 수익금 계산을 위한 빈 벡터 생성
-tickername <- NA
-security <- NA
-current_price <- NA
-amount <- NA
-profits <- NA
+# ============================================================
+# 미국주식 현재가
+#
+# Yahoo Finance JSON API
+#
+# 예:
+#
+# https://query1.finance.yahoo.com/v8/finance/chart/SPY
+#
+# meta$regularMarketPrice 사용
+#
+# 일시적인 통신 오류를 고려하여 최대 3회 재시도
+# ============================================================
 
-# 주식 정보를 순회하면서 수익금 계산
-
-# quantmod패키지의 getSymbols() 함수이용하는 버전
-# for (i in 1:nrow(data_en)) {
-#   tickername[i] <- as.character(data_en$종목명[i])
-#   symbol <- as.character(data_en$종목번호[i])
-#   security[i] <- as.character(data_en$보유증권사[i])
-#   purchase_price <- data_en$매수가격[i]
-#   quantity <- data_en$수량[i]
-# 
-#   # 현재 주식 가격 가져오기
-#   #getSymbols(symbol, src = "yahoo", from = Sys.Date(), to = Sys.Date())
-#   getSymbols(symbol, src = "yahoo", from = Sys.Date()-6, to = Sys.Date()) # 뉴욕과 시차때문에 from Date에서 며칠전 날짜로 설정해줌(오래동안 실행해본 경험에서 나왔음)
-# 
-#   current_price[i] <- as.numeric(last(get(symbol)[,4])) # symbol 종목의 open, high, low, close 가격에서 4번째 위치한 종가를 가져온다.
-# 
-#   amount[i] <- current_price[i] * quantity  # 종목별 평가액
-# 
-#   # 수익금 계산
-#   profits[i] <- (current_price[i] - purchase_price) * quantity
-#   
-#   Sys.sleep(0.5) # 안정성을 위해 약간 delay
-# }
-
-
-# # 네이버 크롤링으로 미국주식 주가 받아오는 버전
-# get_us_price <- function(ticker) {
-#   library(httr)
-#   library(jsonlite)
-#   
-#   url <- paste0(
-#     "https://query1.finance.yahoo.com/v8/finance/chart/",
-#     URLencode(ticker),
-#     "?range=1d&interval=1d&includePrePost=false"
-#   )
-#   
-#   res <- GET(
-#     url,
-#     user_agent("Mozilla/5.0"),
-#     config(
-#       ssl_verifypeer = 0L,
-#       ssl_verifyhost = 0L
-#     )
-#   )
-#   
-#   if (status_code(res) != 200) {
-#     stop("요청 실패: 상태코드 ", status_code(res))
-#   }
-#   
-#   txt <- content(res, as = "text", encoding = "UTF-8")
-#   obj <- fromJSON(txt, simplifyDataFrame = FALSE)
-#   
-#   result <- obj$chart$result
-#   if (is.null(result) || length(result) == 0) {
-#     stop("티커를 찾을 수 없습니다: ", ticker)
-#   }
-#   
-#   meta <- result[[1]]$meta
-#   
-#   # 우선순위: regularMarketPrice -> previousClose
-#   price <- meta$regularMarketPrice
-#   if (is.null(price) || is.na(price)) {
-#     price <- meta$previousClose
-#   }
-#   
-#   if (is.null(price) || is.na(price)) {
-#     stop("현재가를 가져올 수 없습니다: ", ticker)
-#   }
-#   
-#   return(as.numeric(price))
-# }
-
-
-# SSL에러로 인해 웹조회방식으로 바꿈(2026.5.11)
-get_us_price <- function(symbol) {
+get_us_price <- function(
+    symbol,
+    max_retry = 3,
+    retry_wait = 1
+) {
+  
+  symbol <- trimws(symbol)
+  
+  
+  if (
+    is.na(symbol) ||
+    symbol == ""
+  ) {
+    
+    warning(
+      "빈 미국주식 ticker"
+    )
+    
+    return(NA_real_)
+  }
+  
   
   url <- paste0(
     "https://query1.finance.yahoo.com/v8/finance/chart/",
-    symbol
+    URLencode(
+      symbol,
+      reserved = TRUE
+    ),
+    "?range=5d&interval=1d&includePrePost=false"
   )
   
-  res <- httr::GET(
-    url,
-    httr::add_headers(
-      "User-Agent" = "Mozilla/5.0"
-    ),
-    httr::config(
-      ssl_verifypeer = FALSE,
-      ssl_verifyhost = FALSE
-    ),
-    httr::timeout(10)
+  
+  last_error <- NULL
+  
+  
+  for (attempt in 1:max_retry) {
+    
+    
+    price <- tryCatch({
+      
+      
+      res <- httr::GET(
+        
+        url,
+        
+        httr::add_headers(
+          
+          `User-Agent` =
+            paste0(
+              "Mozilla/5.0 ",
+              "(Windows NT 10.0; Win64; x64) ",
+              "AppleWebKit/537.36"
+            ),
+          
+          Accept =
+            "application/json,text/plain,*/*"
+          
+        ),
+        
+        
+        # 회사 PC SSL 인증서 문제 대응
+        httr::config(
+          ssl_verifypeer = FALSE,
+          ssl_verifyhost = FALSE
+        ),
+        
+        
+        httr::timeout(10)
+        
+      )
+      
+      
+      httr::stop_for_status(res)
+      
+      
+      txt <- httr::content(
+        res,
+        as = "text",
+        encoding = "UTF-8"
+      )
+      
+      
+      obj <- jsonlite::fromJSON(
+        txt,
+        simplifyVector = FALSE
+      )
+      
+      
+      # -----------------------------------------------
+      # Yahoo 응답 확인
+      # -----------------------------------------------
+      
+      result <- obj$chart$result
+      
+      
+      if (
+        is.null(result) ||
+        length(result) == 0
+      ) {
+        
+        stop(
+          paste0(
+            "Yahoo에서 ticker를 찾을 수 없음: ",
+            symbol
+          )
+        )
+      }
+      
+      
+      meta <- result[[1]]$meta
+      
+      
+      # -----------------------------------------------
+      # 1순위:
+      # regularMarketPrice
+      # -----------------------------------------------
+      
+      p <- meta$regularMarketPrice
+      
+      
+      # -----------------------------------------------
+      # regularMarketPrice가 없으면
+      # 실제 chart close 중 가장 최근 값 사용
+      # -----------------------------------------------
+      
+      if (
+        is.null(p) ||
+        length(p) == 0 ||
+        is.na(p)
+      ) {
+        
+        
+        quote_data <-
+          result[[1]]$indicators$quote[[1]]$close
+        
+        
+        quote_data <- unlist(
+          quote_data
+        )
+        
+        
+        quote_data <- quote_data[
+          !is.na(quote_data)
+        ]
+        
+        
+        if (length(quote_data) > 0) {
+          
+          p <- tail(
+            quote_data,
+            1
+          )
+          
+        }
+        
+      }
+      
+      
+      # -----------------------------------------------
+      # 그래도 가격 없으면 실패
+      # -----------------------------------------------
+      
+      if (
+        is.null(p) ||
+        length(p) == 0 ||
+        is.na(p)
+      ) {
+        
+        stop(
+          paste0(
+            "현재가 수신 실패: ",
+            symbol
+          )
+        )
+      }
+      
+      
+      p <- as.numeric(p)
+      
+      
+      if (
+        is.na(p) ||
+        p <= 0
+      ) {
+        
+        stop(
+          paste0(
+            "비정상 가격: ",
+            symbol
+          )
+        )
+      }
+      
+      
+      p
+      
+      
+    }, error = function(e) {
+      
+      
+      last_error <<- e$message
+      
+      
+      NA_real_
+      
+      
+    })
+    
+    
+    # 정상 수신
+    if (!is.na(price)) {
+      
+      return(price)
+      
+    }
+    
+    
+    # 재시도
+    if (attempt < max_retry) {
+      
+      Sys.sleep(
+        retry_wait
+      )
+      
+    }
+    
+  }
+  
+  
+  warning(
+    sprintf(
+      "Yahoo 가격 조회 최종 실패: %s (%s)",
+      symbol,
+      last_error
+    )
   )
   
-  txt <- httr::content(res, as = "text", encoding = "UTF-8")
-  data <- jsonlite::fromJSON(txt, simplifyVector = FALSE)
   
-  price <- data$chart$result[[1]]$meta$regularMarketPrice
+  NA_real_
   
-  return(as.numeric(price))
 }
 
 
-for (i in 1:nrow(data_en)) {
+
+# ============================================================
+# USD/KRW 환율
+#
+# 새 네이버 JSON API
+#
+# https://api.stock.naver.com/marketindex/exchange/FX_USDKRW
+#
+# 주요 항목:
+#
+# exchangeInfo$closePrice
+# exchangeInfo$fluctuations
+# exchangeInfo$fluctuationsRatio
+# ============================================================
+
+get_usdkrw_naver <- function(
+    max_retry = 3,
+    retry_wait = 1
+) {
   
-  tickername[i] <- as.character(data_en$종목명[i])
-  symbol <- as.character(data_en$종목번호[i])
-  security[i] <- as.character(data_en$보유증권사[i])
-  purchase_price <- data_en$매수가격[i]
-  quantity <- data_en$수량[i]
-  current_price[i] <- get_us_price(symbol)
-  amount[i] <- current_price[i] * quantity  # 종목별 평가
-  profits[i] <- (current_price[i] - purchase_price) * quantity  # 수익금 계산
-  Sys.sleep(0.5) # 안정성을 위해 약간 delay
+  
+  url <-
+    "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW"
+  
+  
+  last_error <- NULL
+  
+  
+  for (attempt in 1:max_retry) {
+    
+    
+    result <- tryCatch({
+      
+      
+      res <- httr::GET(
+        
+        url,
+        
+        httr::add_headers(
+          
+          `User-Agent` =
+            paste0(
+              "Mozilla/5.0 ",
+              "(Windows NT 10.0; Win64; x64) ",
+              "AppleWebKit/537.36"
+            ),
+          
+          Accept =
+            "application/json,text/plain,*/*"
+          
+        ),
+        
+        
+        httr::config(
+          ssl_verifypeer = FALSE,
+          ssl_verifyhost = FALSE
+        ),
+        
+        
+        httr::timeout(10)
+        
+      )
+      
+      
+      httr::stop_for_status(res)
+      
+      
+      txt <- httr::content(
+        res,
+        as = "text",
+        encoding = "UTF-8"
+      )
+      
+      
+      obj <- jsonlite::fromJSON(
+        txt,
+        simplifyVector = FALSE
+      )
+      
+      
+      info <- obj$exchangeInfo
+      
+      
+      if (is.null(info)) {
+        
+        stop(
+          "exchangeInfo 없음"
+        )
+        
+      }
+      
+      
+      # -----------------------------------------------
+      # 환율
+      # -----------------------------------------------
+      
+      rate_text <- info$closePrice
+      
+      
+      rate <- as.numeric(
+        gsub(
+          ",",
+          "",
+          rate_text,
+          fixed = TRUE
+        )
+      )
+      
+      
+      if (
+        is.na(rate) ||
+        rate <= 0
+      ) {
+        
+        stop(
+          "USD/KRW 환율 파싱 실패"
+        )
+        
+      }
+      
+      
+      # -----------------------------------------------
+      # 전일대비
+      # -----------------------------------------------
+      
+      diff_text <- info$fluctuations
+      
+      
+      if (
+        is.null(diff_text) ||
+        is.na(diff_text)
+      ) {
+        
+        diff_text <- NA_character_
+        
+      }
+      
+      
+      list(
+        
+        rate = rate,
+        
+        diff = diff_text,
+        
+        pct = info$fluctuationsRatio,
+        
+        traded_at = info$localTradedAt
+        
+      )
+      
+      
+    }, error = function(e) {
+      
+      
+      last_error <<- e$message
+      
+      
+      NULL
+      
+      
+    })
+    
+    
+    if (!is.null(result)) {
+      
+      return(result)
+      
+    }
+    
+    
+    if (attempt < max_retry) {
+      
+      Sys.sleep(
+        retry_wait
+      )
+      
+    }
+    
+  }
+  
+  
+  stop(
+    paste0(
+      "네이버 USD/KRW 환율 조회 최종 실패: ",
+      last_error
+    )
+  )
+  
 }
 
 
-# 데이터 프레임에 수익금 추가
-data_en$종목명 <- tickername
-data_en$보유증권사 <- security
-data_en$현재가 <- current_price
-data_en$평가금 <- amount
 
-total_sum <- sum(amount) # 평가액 합산
-total_profit <- sum(profits) # 총 수익금 계산
+# ============================================================
+# S&P500
+#
+# 새 네이버 해외지수 JSON API
+#
+# Reuters Code
+#
+# .INX = S&P500
+#
+# 반환할 값:
+#
+# spx_value
+# spx_diff
+# spx_diff_label
+# spx_pct
+# ============================================================
 
-stock_ratio <- NA
-stock_profit_ratio <- NA
-
-for (i in 1:nrow(data_en)) {
-  stock_ratio[i] <- (data_en$평가금[i] / total_sum)
-  stock_profit_ratio[i] <- (profits[i] / (data_en$평가금[i] - profits[i]))
+get_spx_naver <- function(
+    max_retry = 3,
+    retry_wait = 1
+) {
+  
+  
+  url <- paste0(
+    "https://stock.naver.com/",
+    "api/polling/worldstock/index",
+    "?reutersCodes=.INX"
+  )
+  
+  
+  last_error <- NULL
+  
+  
+  # ----------------------------------------------------------
+  # JSON 안에서 .INX 자료를 재귀적으로 찾는 함수
+  #
+  # 네이버가 response wrapper 구조를 조금 바꿔도
+  # reutersCode=.INX 객체만 찾으면 동작하도록 함
+  # ----------------------------------------------------------
+  
+  find_spx_record <- function(x) {
+    
+    
+    if (!is.list(x)) {
+      
+      return(NULL)
+      
+    }
+    
+    
+    if (
+      !is.null(x$reutersCode) &&
+      identical(
+        as.character(x$reutersCode),
+        ".INX"
+      )
+    ) {
+      
+      return(x)
+      
+    }
+    
+    
+    for (item in x) {
+      
+      
+      if (is.list(item)) {
+        
+        
+        found <- find_spx_record(item)
+        
+        
+        if (!is.null(found)) {
+          
+          return(found)
+          
+        }
+        
+      }
+      
+    }
+    
+    
+    NULL
+    
+  }
+  
+  
+  
+  for (attempt in 1:max_retry) {
+    
+    
+    result <- tryCatch({
+      
+      
+      res <- httr::GET(
+        
+        url,
+        
+        httr::add_headers(
+          
+          `User-Agent` =
+            paste0(
+              "Mozilla/5.0 ",
+              "(Windows NT 10.0; Win64; x64) ",
+              "AppleWebKit/537.36"
+            ),
+          
+          Accept =
+            "application/json,text/plain,*/*",
+          
+          Referer =
+            "https://stock.naver.com/"
+          
+        ),
+        
+        
+        httr::config(
+          ssl_verifypeer = FALSE,
+          ssl_verifyhost = FALSE
+        ),
+        
+        
+        httr::timeout(10)
+        
+      )
+      
+      
+      httr::stop_for_status(res)
+      
+      
+      txt <- httr::content(
+        res,
+        as = "text",
+        encoding = "UTF-8"
+      )
+      
+      
+      obj <- jsonlite::fromJSON(
+        txt,
+        simplifyVector = FALSE
+      )
+      
+      
+      # .INX에 해당하는 객체 탐색
+      spx_data <- find_spx_record(
+        obj
+      )
+      
+      
+      if (is.null(spx_data)) {
+        
+        stop(
+          "S&P500(.INX) 자료를 JSON에서 찾지 못함"
+        )
+        
+      }
+      
+      
+      # -----------------------------------------------
+      # 현재 S&P500
+      # -----------------------------------------------
+      
+      price_text <- spx_data$closePrice
+      
+      
+      price <- as.numeric(
+        gsub(
+          ",",
+          "",
+          price_text,
+          fixed = TRUE
+        )
+      )
+      
+      
+      if (
+        is.na(price) ||
+        price <= 0
+      ) {
+        
+        stop(
+          "S&P500 현재가 파싱 실패"
+        )
+        
+      }
+      
+      
+      # -----------------------------------------------
+      # 전일 대비
+      # -----------------------------------------------
+      
+      diff_text <-
+        spx_data$compareToPreviousClosePrice
+      
+      
+      pct_text <-
+        spx_data$fluctuationsRatio
+      
+      
+      if (
+        is.null(diff_text) ||
+        is.na(diff_text)
+      ) {
+        
+        diff_text <- NA_character_
+        
+      }
+      
+      
+      if (
+        is.null(pct_text) ||
+        is.na(pct_text)
+      ) {
+        
+        pct_text <- NA_character_
+        
+      }
+      
+      
+      list(
+        
+        spx_value =
+          price,
+        
+        spx_diff =
+          diff_text,
+        
+        spx_diff_label =
+          diff_text,
+        
+        spx_pct =
+          pct_text,
+        
+        market_status =
+          spx_data$marketStatus,
+        
+        traded_at =
+          spx_data$localTradedAt
+        
+      )
+      
+      
+    }, error = function(e) {
+      
+      
+      last_error <<- e$message
+      
+      
+      NULL
+      
+      
+    })
+    
+    
+    if (!is.null(result)) {
+      
+      return(result)
+      
+    }
+    
+    
+    if (attempt < max_retry) {
+      
+      Sys.sleep(
+        retry_wait
+      )
+      
+    }
+    
+  }
+  
+  
+  stop(
+    paste0(
+      "네이버 S&P500 조회 최종 실패: ",
+      last_error
+    )
+  )
+  
 }
 
-data_en$비중 <- stock_ratio
-data_en$수익금 <- profits
-data_en$수익률 <- stock_profit_ratio
-
-data_en <- data_en %>% arrange(desc(평가금))
-
-# 오늘의 날짜로 시작하는 행을 추가하고 총 수익금 입력
-summary_row <- data.frame(종목명 = paste("(", today, "USD 합계", ")"), 종목번호 = NA, 보유증권사 = NA, 매수가격 = NA, 수량 = NA, 현재가 = NA, 평가금 = total_sum, 비중 = sum(stock_ratio), 수익금 = total_profit, 수익률 = total_profit / (total_sum - total_profit))
-data <- rbind(data_en, summary_row)
 
 
-url <- "https://finance.naver.com/marketindex/"  # 네이버 시장지표 URL
+# ============================================================
+# 미국주식 평가 계산 준비
+# ============================================================
 
-# 웹페이지 가져오기
-page <- read_html(url)
+tickername <- character(n_stock)
 
-naver_finance_values <- page %>%
-  html_nodes(".value") %>%
-  html_text()
+security <- character(n_stock)
 
-exchange_rate <- as.numeric(gsub(",", "", naver_finance_values[1]))   # 1번째가 환율
+current_price <- numeric(n_stock)
+
+amount <- numeric(n_stock)
+
+profits <- numeric(n_stock)
 
 
-# 환율 전일 대비
-exchange_diff <- {
-  box <- page %>% html_node("#exchangeList .on")
-  num <- box %>% html_node(".change") %>% html_text(trim = TRUE)
-  cls <- box %>% html_node(".head_info") %>% html_attr("class")
-  if (str_detect(cls, "up")) paste0("+", num)
-  else if (str_detect(cls, "dn")) paste0("-", num)
-  else paste0("±", num)
+
+# ============================================================
+# 미국주식 현재가 수신
+# ============================================================
+
+for (i in 1:n_stock) {
+  
+  
+  tickername[i] <-
+    as.character(
+      data_en$종목명[i]
+    )
+  
+  
+  symbol <-
+    as.character(
+      data_en$종목번호[i]
+    )
+  
+  
+  security[i] <-
+    as.character(
+      data_en$보유증권사[i]
+    )
+  
+  
+  purchase_price <-
+    data_en$매수가격[i]
+  
+  
+  quantity <-
+    data_en$수량[i]
+  
+  
+  # Yahoo 실시간/최근 현재가
+  current_price[i] <-
+    get_us_price(
+      symbol
+    )
+  
+  
+  # 평가액
+  amount[i] <-
+    current_price[i] *
+    quantity
+  
+  
+  # 수익금
+  profits[i] <-
+    (
+      current_price[i] -
+        purchase_price
+    ) *
+    quantity
+  
+  
+  Sys.sleep(0.5)
+  
 }
 
-summary_row_en <-NA
-summary_row_en <- data.frame(종목명 = paste("( 환율", exchange_rate, "적용시 KRW 기준", ")"), 종목번호 = NA, 보유증권사 = NA, 매수가격 = NA, 수량 = NA, 현재가 = NA, 평가금 = total_sum * exchange_rate, 비중 = NA, 수익금 = total_profit * exchange_rate, 수익률 = total_profit / (total_sum - total_profit))
-data <- rbind(data, summary_row_en)
 
-#cat("환율 : ", exchange_rate)
 
-# 결과를 엑셀 파일로 저장
-write_xlsx(data, output_file)
+# ============================================================
+# 안전장치
+#
+# 미국주식 가격 하나라도 조회 실패하면
+# 잘못된 PMS 자료를 만들지 않고 중단
+# ============================================================
 
-#cat(nrow(data)-1, "개 미국종목의 수익금 계산이 완료되었습니다. 결과는", output_file, "에 저장되었습니다.")
+if (anyNA(current_price)) {
+  
+  
+  failed_stocks <-
+    data_en$종목명[
+      is.na(current_price)
+    ]
+  
+  
+  failed_codes <-
+    data_en$종목번호[
+      is.na(current_price)
+    ]
+  
+  
+  fail_msg <- paste0(
+    
+    failed_stocks,
+    
+    "(",
+    
+    failed_codes,
+    
+    ")",
+    
+    collapse = ", "
+    
+  )
+  
+  
+  stop(
+    paste0(
+      "\n",
+      "============================================\n",
+      "미국주식 시세 수신 실패\n",
+      "============================================\n",
+      "\n",
+      "stock_eval_us.R 실행을 중단합니다.\n",
+      "\n",
+      "실패 종목: ",
+      fail_msg,
+      "\n\n",
+      "잘못된 평가금/자산비중 파일은 생성하지 않았습니다.\n"
+    )
+  )
+  
+}
 
-data_en <- data
-#View(data_en)
 
+
+# ============================================================
+# 평가 데이터 계산
+# ============================================================
+
+data_en$종목명 <-
+  tickername
+
+
+data_en$보유증권사 <-
+  security
+
+
+data_en$현재가 <-
+  current_price
+
+
+data_en$평가금 <-
+  amount
+
+
+
+# ============================================================
+# 전체 평가액 / 수익금
+# ============================================================
+
+total_sum <- sum(
+  amount
+)
+
+
+total_profit <- sum(
+  profits
+)
+
+
+
+# ============================================================
+# 비중 및 수익률
+# ============================================================
+
+stock_ratio <-
+  data_en$평가금 /
+  total_sum
+
+
+stock_profit_ratio <-
+  profits /
+  (
+    data_en$평가금 -
+      profits
+  )
+
+
+data_en$비중 <-
+  stock_ratio
+
+
+data_en$수익금 <-
+  profits
+
+
+data_en$수익률 <-
+  stock_profit_ratio
+
+
+
+# ============================================================
+# 평가금 순 정렬
+# ============================================================
+
+data_en <- data_en %>%
+  
+  arrange(
+    desc(평가금)
+  )
+
+
+
+# ============================================================
+# USD 기준 합계 행
+# ============================================================
+
+summary_row <- data.frame(
+  
+  종목명 =
+    paste(
+      "(",
+      today,
+      "USD 합계",
+      ")"
+    ),
+  
+  종목번호 =
+    NA,
+  
+  보유증권사 =
+    NA,
+  
+  매수가격 =
+    NA,
+  
+  수량 =
+    NA,
+  
+  현재가 =
+    NA,
+  
+  평가금 =
+    total_sum,
+  
+  비중 =
+    sum(
+      stock_ratio
+    ),
+  
+  수익금 =
+    total_profit,
+  
+  수익률 =
+    total_profit /
+    (
+      total_sum -
+        total_profit
+    )
+  
+)
+
+
+data <- rbind(
+  data_en,
+  summary_row
+)
+
+
+
+# ============================================================
+# 네이버 USD/KRW 환율
+# ============================================================
+
+fx <- get_usdkrw_naver()
+
+
+exchange_rate <-
+  fx$rate
+
+
+exchange_diff <-
+  fx$diff
+
+
+
+# ============================================================
+# 원화 환산 합계 행
+# ============================================================
+
+summary_row_en <- data.frame(
+  
+  종목명 =
+    paste(
+      "(",
+      "환율",
+      exchange_rate,
+      "적용시 KRW 기준",
+      ")"
+    ),
+  
+  종목번호 =
+    NA,
+  
+  보유증권사 =
+    NA,
+  
+  매수가격 =
+    NA,
+  
+  수량 =
+    NA,
+  
+  현재가 =
+    NA,
+  
+  평가금 =
+    total_sum *
+    exchange_rate,
+  
+  비중 =
+    NA,
+  
+  수익금 =
+    total_profit *
+    exchange_rate,
+  
+  수익률 =
+    total_profit /
+    (
+      total_sum -
+        total_profit
+    )
+  
+)
+
+
+data <- rbind(
+  data,
+  summary_row_en
+)
+
+
+
+# ============================================================
+# Excel 저장
+# ============================================================
+
+writexl::write_xlsx(
+  data,
+  output_file
+)
+
+
+
+# ============================================================
+# 그래프용 데이터
+# ============================================================
+
+data_en_output <- data
+
+
+
+# ============================================================
 # 증권사별 평가액
-new_data_en <- data_en %>%
-  group_by(보유증권사) %>%
-  summarize(sec_tot = sum(평가금), 비중 = sum(비중)) %>%
-  arrange(desc(sec_tot))
-new_data_en
+# ============================================================
 
+new_data_en <- data_en %>%
+  
+  group_by(
+    보유증권사
+  ) %>%
+  
+  summarize(
+    
+    sec_tot =
+      sum(평가금),
+    
+    비중 =
+      sum(비중),
+    
+    .groups = "drop"
+    
+  ) %>%
+  
+  arrange(
+    desc(sec_tot)
+  )
+
+
+print(
+  new_data_en
+)
+
+
+
+# ============================================================
 # 평가금 많은 종목
-new_data_en <- data_en %>%
-  group_by(평가금) %>%
-  summarize(sec_name = 종목명, 비중 = 비중) %>%
-  arrange(desc(평가금))
-new_data_en
+# ============================================================
+
+new_stock_data <- data_en %>%
+  
+  arrange(
+    desc(평가금)
+  ) %>%
+  
+  select(
+    종목명,
+    평가금,
+    비중
+  )
 
 
-# 아래 통계는 콘솔과 plots창에 표시됨
-# 증권사별 평가액
-new_data <- data %>%
-  group_by(보유증권사) %>%
-  summarize(sec_tot = sum(평가금)) %>%
-  arrange(desc(sec_tot))
-new_data <- new_data %>% filter(!is.na(보유증권사))  # NA 제거
-new_data
-ggplot(data = new_data, aes(x = reorder(보유증권사, -sec_tot), y = sec_tot/1000000)) +
-  labs(x = "증권사", y = "보유액합계(백만)") +
-  #geom_text(aes(label=sec_tot/1000000/exchange_rate[-1]), vjust = -0.1) +
+print(
+  new_stock_data
+)
+
+
+
+# ============================================================
+# 증권사별 평가액 그래프
+# ============================================================
+
+new_data <- data_en %>%
+  
+  group_by(
+    보유증권사
+  ) %>%
+  
+  summarize(
+    
+    sec_tot =
+      sum(평가금),
+    
+    .groups = "drop"
+    
+  ) %>%
+  
+  filter(
+    !is.na(보유증권사)
+  ) %>%
+  
+  arrange(
+    desc(sec_tot)
+  )
+
+
+print(
+  new_data
+)
+
+
+p_sec <- ggplot(
+  
+  data = new_data,
+  
+  aes(
+    
+    x = reorder(
+      보유증권사,
+      -sec_tot
+    ),
+    
+    y =
+      sec_tot /
+      1000000
+    
+  )
+  
+) +
+  
+  labs(
+    x = "증권사",
+    y = "보유액합계(백만$)"
+  ) +
+  
   geom_col()
 
 
-# 종목별 평가액
-new_data <- data %>%
-  group_by(종목명) %>%
-  summarize(종목평가합산 = sum(평가금), 합산수량 = sum(수량), 수익금합산 = sum(수익금)) %>%
-  arrange(desc(종목평가합산))
-new_data <- new_data[-1,]    # 첫번째 행 제거
-new_data <- new_data[-1,]    # 첫번째 행 제거
-new_data$rate = new_data$종목평가합산 / sum(new_data$종목평가합산)
-#print(new_data, n=30)
+print(
+  p_sec
+)
 
-p_us <- ggplot(new_data, aes(x = reorder(종목명, -종목평가합산), y = 종목평가합산/1000000, fill=수익금합산/종목평가합산)) +
-  scale_x_discrete(guide = guide_axis(angle = 30)) +
-  #labs(x = "종목", y = "종목별 합계(백만원)") +
-  geom_text(aes(label= round(종목평가합산/sum(종목평가합산), 2) ), vjust = -0.1) +
-  geom_col() +
-  scale_fill_gradient2(low = "red",
-                       high = "blue",
-                       midpoint = 0) +
-  labs(
-    title = "미국 주식 종목별 평가금(단위:백만$, 그래프위 숫자는 비중)"
+
+
+# ============================================================
+# 종목별 평가액
+#
+# summary 행을 이용하지 않고
+# 원본 미국주식 data_en만 이용하므로
+# 예전처럼 첫 번째 행 2번 삭제할 필요 없음
+# ============================================================
+
+new_data <- data_en %>%
+  
+  group_by(
+    종목명
+  ) %>%
+  
+  summarize(
+    
+    종목평가합산 =
+      sum(평가금),
+    
+    합산수량 =
+      sum(수량),
+    
+    수익금합산 =
+      sum(수익금),
+    
+    .groups = "drop"
+    
+  ) %>%
+  
+  arrange(
+    desc(종목평가합산)
   )
 
-print(p_us)
-print(paste0(nrow(data)-1, "개 미국종목의 수익금 계산이 완료되었습니다. 결과는", output_file, "에 저장되었습니다."))
+
+new_data$rate <-
+  new_data$종목평가합산 /
+  sum(
+    new_data$종목평가합산
+  )
 
 
-url <- "https://finance.naver.com/world/sise.naver?symbol=SPI@SPX"
-page <- read_html(url, encoding = "EUC-KR")
 
-# 현재가
-price <- page %>%
-  html_node("p.no_today") %>%
-  html_text(trim = TRUE) %>%
-  str_squish()
+# ============================================================
+# 미국주식 종목별 평가금 그래프
+# ============================================================
 
-# 전일대비 영역 전체
-exday_text <- page %>%
-  html_node("p.no_exday") %>%
-  html_text(trim = TRUE) %>%
-  str_squish()
+p_us <- ggplot(
+  
+  new_data,
+  
+  aes(
+    
+    x = reorder(
+      종목명,
+      -종목평가합산
+    ),
+    
+    y =
+      종목평가합산 /
+      1000000,
+    
+    fill =
+      수익금합산 /
+      종목평가합산
+    
+  )
+  
+) +
+  
+  scale_x_discrete(
+    guide =
+      guide_axis(
+        angle = 30
+      )
+  ) +
+  
+  geom_text(
+    
+    aes(
+      
+      label =
+        round(
+          종목평가합산 /
+            sum(
+              종목평가합산
+            ),
+          2
+        )
+      
+    ),
+    
+    vjust = -0.1
+    
+  ) +
+  
+  geom_col() +
+  
+  scale_fill_gradient2(
+    
+    low = "red",
+    
+    high = "blue",
+    
+    midpoint = 0
+    
+  ) +
+  
+  labs(
+    
+    title =
+      "미국 주식 종목별 평가금(단위:백만$, 그래프위 숫자는 비중)"
+    
+  )
 
-# 등락률: 괄호 안의 xx.xx%
-pct_change <- str_extract(exday_text, "[+-]?[0-9.]+%")
-pct_change <- str_remove(pct_change, "%")
 
-# 전일대비: 등락률 괄호 앞 숫자
-change <- exday_text %>%
-  str_remove("\\([^()]*%\\)") %>%
-  str_extract("[+-]?[0-9,]+\\.?[0-9]*")
-
-# cat("S&P500 현재가:", price, "\n")
-# cat("전일대비:", change, "\n")
-# cat("등락률:", pct_change, "\n")
-
-spx$spx_value <- price
-spx$spx_diff <- change
-spx$spx_diff_label <- paste0(
-  str_extract(exday_text, "[+-](?=[0-9.]+%)"),
-  str_extract(exday_text, "[0-9,]+\\.?[0-9]*")
+print(
+  p_us
 )
-spx$spx_pct <- pct_change
 
-# 사용 예
-# spx <- get_spx_quantmod()
-# cat("S&P500 지수 :", spx$spx_value,
-#     "(전일대비:", spx$spx_diff_label,
-#     ", 일간변동률:", spx$spx_pct, "%)\n")
 
+
+# ============================================================
+# 완료 메시지
+# ============================================================
+
+print(
+  paste0(
+    n_stock,
+    "개 미국종목의 수익금 계산이 완료되었습니다. 결과는 ",
+    output_file,
+    " 에 저장되었습니다."
+  )
+)
+
+
+
+# ============================================================
+# S&P500
+#
+# 기존:
+#
+# finance.naver.com/world/sise.naver?symbol=SPI@SPX
+# read_html(..., encoding="EUC-KR")
+#
+# 폐기
+#
+# 새 Naver JSON API 사용
+# ============================================================
+
+spx <- get_spx_naver()
+
+
+
+# ============================================================
+# 기존 다른 PMS 코드와의 호환을 위해
+#
+# 다음 이름 그대로 유지
+#
+# spx$spx_value
+# spx$spx_diff
+# spx$spx_diff_label
+# spx$spx_pct
+# ============================================================
+
+
+cat(
+  "\nS&P500 지수 :",
+  spx$spx_value,
+  
+  "\n전일대비 :",
+  spx$spx_diff_label,
+  
+  "\n일간변동률 :",
+  spx$spx_pct,
+  "%\n"
+)
+
+
+cat(
+  "\nUSD/KRW 환율 :",
+  exchange_rate,
+  
+  "\n환율 전일대비 :",
+  exchange_diff,
+  
+  "\n"
+)
