@@ -6,7 +6,7 @@
 # - stock_eval.R / stock_eval_us.R 필요(각각 국내 및 미국 주식 데이터 수집 모듈)
 # - risk_module.R 필요(리스크관리 함수 모음)
 #   . risk_module.R의 몬테카를로, MDD, 인출, 팩터, PCA를 모두 호출
-# - pms_benchmark.R : S&P500, NASDAQ 지수와 벤치마크 비교용 소스
+# - pms_benchmark.R : S&P500, NASDA7/Q 지수와 벤치마크 비교용 소스
 #
 # [입력 파일]
 #         input_stock.csv    : 한국주식
@@ -34,6 +34,7 @@
 # 2026-06-12 금융소득종합과세자(연간 금융소득 2천만원 초과)가 되는지 여부를 미리 알수 있는 텍스트 그래프 추가
 #            같은 폴더에 dividend.csv를 만들고 '날짜,종목명,통화,배당금,환율' 순서로 입력하여 수기로 관리
 #            그렇게 하면 연말까지 예상 배당금을 미리 알 수 있음(분리과세 배당도 있으므로 오차 감안하여 단순참고)
+# 2026-09-11 네이버 증권 홈페이지 개편에 따른 증권정보 수집 모듈 수정
 
 # =========================================================
 # 패키지 설치/로드
@@ -119,9 +120,11 @@ showtext_auto()
 
 # 환율 정보 변후 초기화
 spx <- NA
-spx_val <- if(is.list(spx)) spx$spx_value else "(미수집)" 
-spx_diff <- if(is.list(spx)) spx$spx_diff_label else "-" 
+spx_val <- if(is.list(spx)) spx$spx_value else "(미수집)"
+spx_diff <- if(is.list(spx)) spx$spx_diff_label else "-"
 spx_pct <- if(is.list(spx)) spx$spx_pct else NA_real_
+
+
 
 # =========================================================
 # 유틸: TWR 계산 컬럼 추가
@@ -382,47 +385,328 @@ join_stock_data <- function(today_df, prev_df) {
 }
 
 
-get_naver_usdkrw <- function(start_date, end_date) {  # 네이버 금융에서 특정일부터 특정일까지 환율조회
-  start_date <- ymd(start_date)
-  end_date   <- ymd(end_date)
+get_naver_usdkrw <- function(
+    start_date,
+    end_date,
+    max_pages = 1000,
+    max_retry = 3,
+    retry_wait = 1
+) {
   
-  result <- data.frame()
-  page <- 1
+  start_date <- as.Date(start_date)
+  end_date   <- as.Date(end_date)
   
-  repeat {
+  if (is.na(start_date) || is.na(end_date)) {
+    stop("환율 조회 날짜 형식 오류")
+  }
+  
+  if (start_date > end_date) {
+    stop("환율 시작일이 종료일보다 늦습니다.")
+  }
+  
+  
+  result <- data.frame(
+    date = as.Date(character()),
+    rate = numeric()
+  )
+  
+  
+  for (page in seq_len(max_pages)) {
+    
     url <- paste0(
-      "https://finance.naver.com/marketindex/exchangeDailyQuote.naver?",
-      "marketindexCd=FX_USDKRW&page=", page
+      "https://finance.naver.com/",
+      "marketindex/exchangeDailyQuote.naver",
+      "?marketindexCd=FX_USDKRW",
+      "&page=", page
     )
     
-    tbl <- read_html(url, encoding = "EUC-KR") %>%
-      html_table(fill = TRUE) %>%
-      .[[1]]
     
-    # names(tbl) <- c("date", "rate", "change", "buy_cash", "sell_cash", 
-    #                 "send", "receive", "tc_buy", "foreign_check")
-    names(tbl) <- c("date", "rate", "change", "buy_cash", "sell_cash", 
-                    "send", "receive")
+    txt <- NULL
+    last_error <- NULL
     
-    tbl <- tbl %>%
-      filter(!is.na(date), str_detect(date, "\\d{4}\\.\\d{2}\\.\\d{2}")) %>%
-      mutate(
-        date = ymd(str_replace_all(date, "\\.", "-")),
-        rate = as.numeric(str_replace_all(rate, ",", ""))
-      ) %>%
-      select(date, rate)
     
-    result <- bind_rows(result, tbl)
+    # -------------------------------------------------------
+    # 통신 오류 대비 재시도
+    # -------------------------------------------------------
     
-    if (min(tbl$date) < start_date) break
+    for (attempt in seq_len(max_retry)) {
+      
+      txt <- tryCatch({
+        
+        resp <- httr::GET(
+          url,
+          
+          httr::add_headers(
+            `User-Agent` = paste0(
+              "Mozilla/5.0 ",
+              "(Windows NT 10.0; Win64; x64) ",
+              "AppleWebKit/537.36 ",
+              "(KHTML, like Gecko) ",
+              "Chrome/152.0.0.0 Safari/537.36"
+            ),
+            
+            Referer =
+              "https://finance.naver.com/marketindex/"
+          ),
+          
+          # 회사 PC SSL 인증서 문제 대응
+          httr::config(
+            ssl_verifypeer = 0L,
+            ssl_verifyhost = 0L
+          ),
+          
+          httr::timeout(15)
+        )
+        
+        
+        if (httr::status_code(resp) != 200) {
+          stop(
+            paste0(
+              "HTTP ",
+              httr::status_code(resp)
+            )
+          )
+        }
+        
+        
+        # raw로 받은 뒤 EUC-KR -> UTF-8 변환
+        # read_html()의 Invalid bytes 문제 방지
+        raw_data <- httr::content(
+          resp,
+          as = "raw"
+        )
+        
+        
+        raw_txt <- rawToChar(raw_data)
+        
+        
+        iconv(
+          raw_txt,
+          from = "EUC-KR",
+          to   = "UTF-8",
+          sub  = ""
+        )
+        
+      }, error = function(e) {
+        
+        last_error <<- conditionMessage(e)
+        NULL
+        
+      })
+      
+      
+      if (!is.null(txt)) {
+        break
+      }
+      
+      
+      if (attempt < max_retry) {
+        Sys.sleep(retry_wait)
+      }
+    }
     
-    page <- page + 1
+    
+    if (is.null(txt)) {
+      
+      stop(
+        paste0(
+          "USD/KRW 환율 조회 실패 page=",
+          page,
+          " : ",
+          last_error
+        )
+      )
+    }
+    
+    
+    # -------------------------------------------------------
+    # HTML 파싱
+    # -------------------------------------------------------
+    
+    doc <- tryCatch(
+      
+      xml2::read_html(
+        txt,
+        encoding = "UTF-8"
+      ),
+      
+      error = function(e) {
+        NULL
+      }
+    )
+    
+    
+    if (is.null(doc)) {
+      
+      stop(
+        paste0(
+          "USD/KRW HTML 파싱 실패 page=",
+          page
+        )
+      )
+    }
+    
+    
+    rows <- rvest::html_elements(
+      doc,
+      "table.tbl_exchange tbody tr"
+    )
+    
+    
+    if (length(rows) == 0) {
+      break
+    }
+    
+    
+    # -------------------------------------------------------
+    # 날짜 / 매매기준율 추출
+    # -------------------------------------------------------
+    
+    tmp <- dplyr::bind_rows(
+      
+      lapply(
+        rows,
+        
+        function(row) {
+          
+          date_node <- rvest::html_elements(
+            row,
+            "td.date"
+          )
+          
+          num_nodes <- rvest::html_elements(
+            row,
+            "td.num"
+          )
+          
+          
+          if (
+            length(date_node) == 0 ||
+            length(num_nodes) == 0
+          ) {
+            return(NULL)
+          }
+          
+          
+          d <- rvest::html_text2(
+            date_node[[1]]
+          )
+          
+          
+          # 첫 번째 num이 매매기준율
+          p <- rvest::html_text2(
+            num_nodes[[1]]
+          )
+          
+          
+          d <- trimws(d)
+          p <- trimws(p)
+          
+          
+          parsed_date <- suppressWarnings(
+            as.Date(
+              gsub(
+                ".",
+                "-",
+                d,
+                fixed = TRUE
+              )
+            )
+          )
+          
+          
+          rate_value <- suppressWarnings(
+            as.numeric(
+              gsub(
+                ",",
+                "",
+                p,
+                fixed = TRUE
+              )
+            )
+          )
+          
+          
+          if (
+            is.na(parsed_date) ||
+            is.na(rate_value) ||
+            rate_value <= 0
+          ) {
+            return(NULL)
+          }
+          
+          
+          data.frame(
+            date = parsed_date,
+            rate = rate_value
+          )
+        }
+      )
+    )
+    
+    
+    if (nrow(tmp) == 0) {
+      break
+    }
+    
+    
+    result <- dplyr::bind_rows(
+      result,
+      tmp
+    )
+    
+    
+    # -------------------------------------------------------
+    # 필요한 시작일까지 조회했으면 종료
+    # -------------------------------------------------------
+    
+    if (
+      min(
+        tmp$date,
+        na.rm = TRUE
+      ) <= start_date
+    ) {
+      break
+    }
+    
+    
     Sys.sleep(0.2)
   }
   
-  result %>%
-    filter(date >= start_date, date <= end_date) %>%
-    arrange(date)
+  
+  # ---------------------------------------------------------
+  # 날짜 범위 정리
+  # ---------------------------------------------------------
+  
+  result <- result %>%
+    
+    dplyr::distinct(
+      date,
+      .keep_all = TRUE
+    ) %>%
+    
+    dplyr::filter(
+      date >= start_date,
+      date <= end_date
+    ) %>%
+    
+    dplyr::arrange(date)
+  
+  
+  if (nrow(result) == 0) {
+    
+    stop(
+      paste0(
+        "USD/KRW 환율 데이터 없음: ",
+        start_date,
+        " ~ ",
+        end_date
+      )
+    )
+  }
+  
+  
+  result
 }
 
 
@@ -995,40 +1279,40 @@ repeat {
                 inflate.labels = TRUE,
                 lowerbound.cex.labels = 0.5)
         
-        
-        # # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
-        # treemap(
-        #   rt %>%
-        #     mutate(
-        #       종목그룹 = case_when(
-        #         grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
-        #         
-        #         grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "S&P500",
-        #         
-        #         grepl("KODEX종합채권액티브ETF", 종목명) |
-        #           grepl("KODEX미국30년국채액티브", 종목명) |
-        #           grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
-        #           grepl("TIGER미국테크TOP10채권혼합", 종목명) |
-        #           grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "BOND",
-        #         
-        #         grepl("KODEX 머니마켓액티브", 종목명) |
-        #           grepl("TIGER KOFR금리액티브", 종목명) |
-        #           grepl("RISE KOFR금리액티브", 종목명) |
-        #           grepl("^BIL$", 종목명) |
-        #           grepl("^SGOV$", 종목명) ~ "CASH_LIKE",
-        #         
-        #         TRUE ~ 종목명
-        #       )
-        #     ),
-        #   index="종목그룹",
-        #   vSize="한화평가금",
-        #   title="종목그룹 트리맵",
-        #   palette = "Set3",
-        #   border.col = "white",
-        #   inflate.labels = TRUE,
-        #   lowerbound.cex.labels = 0.5
-        # )
-        
+
+        # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
+        treemap(
+          rt %>%
+            mutate(
+              종목그룹 = case_when(
+                grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
+
+                grepl("S&P500", 종목명) | grepl("SPYM", 종목명) | grepl("IVV", 종목명) ~ "S&P500",
+
+                grepl("KODEX종합채권액티브ETF", 종목명) |
+                  grepl("KODEX미국30년국채액티브", 종목명) |
+                  grepl("ACE미국30년국채액티브\\(H\\)", 종목명) |
+                  grepl("TIGER미국테크TOP10채권혼합", 종목명) |
+                  grepl("삼성전자SK하이닉스채권혼합50", 종목명) ~ "BOND",
+
+                grepl("KODEX 머니마켓액티브", 종목명) |
+                  grepl("TIGER KOFR금리액티브", 종목명) |
+                  grepl("RISE KOFR금리액티브", 종목명) |
+                  grepl("^BIL$", 종목명) |
+                  grepl("^SGOV$", 종목명) ~ "CASH_LIKE",
+
+                TRUE ~ 종목명
+              )
+            ),
+          index="종목그룹",
+          vSize="한화평가금",
+          title="종목그룹 트리맵",
+          palette = "Set3",
+          border.col = "white",
+          inflate.labels = TRUE,
+          lowerbound.cex.labels = 0.5
+        )
+  
         
         # 1일 평균 증가액
         fit <- lm(sum_left ~ as.numeric(dd_plot_base$Date), data = dd_plot_base)
@@ -2205,7 +2489,6 @@ repeat {
           suppressMessages(print(combined_plot))
           
           # PDF 저장
-          showtext_auto()
           date_str <- format(Sys.Date(), "%Y%m%d")
           out_dir  <- "reports"
           dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -2246,11 +2529,6 @@ repeat {
       warnings_vec <- if (exists("warnings_vec")) warnings_vec else character(0)
       errors_vec   <- if (exists("errors_vec"))   errors_vec   else character(0)
       
-      
-      
-      if (!exists("cvar_amt"))
-        cvar_amt <- NA_real_
-      
       prompt_text <- make_gemini_prompt_pms(
         dd = dd,
         sum_xts = sum_xts,
@@ -2268,6 +2546,7 @@ repeat {
   }
   
   if (!REPEAT_FLAG) break
+  
   
   # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
   print(
