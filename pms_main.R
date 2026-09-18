@@ -44,7 +44,7 @@ pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
          "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
-         "dplyr", "writexl", "purrr", "broom")
+         "dplyr", "writexl", "purrr", "broom", "jsonlite")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
@@ -507,6 +507,339 @@ get_usdkrw <- function(
   result
 }
 
+
+
+# =========================================================
+# [2026-09-18] KOSPI + USD/KRW 장중 1분봉 전체화면 오버레이
+# - 기존 PMS 그래프/게이지/theme/layout은 건드리지 않음
+# - combined_plot을 먼저 원래대로 그린 뒤 선만 마지막에 덧그림
+# - CSV는 날짜별 누적하지 않고 각각 한 파일만 덮어씀
+# =========================================================
+
+get_yahoo_intraday_1m <- function(
+    symbol,
+    value_name,
+    cache_file,
+    date = Sys.Date(),
+    start_time = "09:00",
+    end_time = "15:30",
+    max_retry = 3,
+    retry_wait = 1
+) {
+  dir.create(dirname(cache_file), showWarnings = FALSE, recursive = TRUE)
+  
+  symbol_url <- utils::URLencode(symbol, reserved = TRUE)
+  url <- paste0("https://query1.finance.yahoo.com/v8/finance/chart/", symbol_url)
+  
+  last_error <- NULL
+  out <- NULL
+  
+  for (attempt in seq_len(max_retry)) {
+    out <- tryCatch({
+      resp <- httr::GET(
+        url,
+        query = list(
+          range = "1d",
+          interval = "1m",
+          includePrePost = "true",
+          events = "div,splits"
+        ),
+        httr::add_headers(
+          `User-Agent` = paste0(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ",
+            "AppleWebKit/537.36 (KHTML, like Gecko) ",
+            "Chrome/152.0.0.0 Safari/537.36"
+          )
+        ),
+        httr::config(
+          ssl_verifypeer = 0L,
+          ssl_verifyhost = 0L
+        ),
+        httr::timeout(15)
+      )
+      
+      if (httr::status_code(resp) != 200) {
+        stop(paste0("HTTP ", httr::status_code(resp)))
+      }
+      
+      txt <- httr::content(resp, as = "text", encoding = "UTF-8")
+      js  <- jsonlite::fromJSON(txt, simplifyVector = FALSE)
+      
+      if (!is.null(js$chart$error)) {
+        stop(js$chart$error$description)
+      }
+      
+      z <- js$chart$result[[1]]
+      ts <- unlist(z$timestamp)
+      close_vec <- unlist(z$indicators$quote[[1]]$close)
+      
+      if (length(ts) == 0 || length(close_vec) == 0) {
+        stop(paste0(value_name, " 1분봉 데이터 없음"))
+      }
+      
+      n <- min(length(ts), length(close_vec))
+      ts <- ts[seq_len(n)]
+      close_vec <- suppressWarnings(as.numeric(close_vec[seq_len(n)]))
+      
+      dt <- as.POSIXct(ts, origin = "1970-01-01", tz = "Asia/Seoul")
+      
+      df <- data.frame(
+        DateTime = dt,
+        Value = close_vec,
+        stringsAsFactors = FALSE
+      )
+      
+      target_date <- format(as.Date(date), "%Y-%m-%d")
+      date_chr <- format(df$DateTime, "%Y-%m-%d", tz = "Asia/Seoul")
+      time_chr <- format(df$DateTime, "%H:%M", tz = "Asia/Seoul")
+      
+      keep <- !is.na(date_chr) &
+        date_chr == target_date &
+        is.finite(df$Value) &
+        df$Value > 0 &
+        time_chr >= start_time &
+        time_chr <= end_time
+      
+      df <- df[keep, , drop = FALSE]
+      
+      if (NROW(df) == 0) {
+        stop(paste0("오늘 ", value_name, " 1분봉 데이터 없음"))
+      }
+      
+      df$Time <- format(df$DateTime, "%H:%M", tz = "Asia/Seoul")
+      df <- df[!duplicated(df$Time), , drop = FALSE]
+      df <- df[order(df$DateTime), , drop = FALSE]
+      
+      names(df)[names(df) == "Value"] <- value_name
+      df
+    }, error = function(e) {
+      last_error <<- conditionMessage(e)
+      NULL
+    })
+    
+    if (!is.null(out) && NROW(out) > 0) break
+    if (attempt < max_retry) Sys.sleep(retry_wait)
+  }
+  
+  if (!is.null(out) && NROW(out) > 0) {
+    save_df <- data.frame(
+      Date = format(out$DateTime, "%Y-%m-%d", tz = "Asia/Seoul"),
+      Time = out$Time,
+      Value = out[[value_name]],
+      stringsAsFactors = FALSE
+    )
+    names(save_df)[3] <- value_name
+    readr::write_csv(save_df, cache_file)
+    return(out)
+  }
+  
+  if (file.exists(cache_file)) {
+    cached <- tryCatch(
+      readr::read_csv(cache_file, show_col_types = FALSE),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(cached) &&
+        NROW(cached) > 0 &&
+        all(c("Date", "Time", value_name) %in% names(cached))) {
+      
+      target_date <- format(as.Date(date), "%Y-%m-%d")
+      vals <- suppressWarnings(as.numeric(cached[[value_name]]))
+      
+      keep <- !is.na(cached$Date) &
+        as.character(cached$Date) == target_date &
+        !is.na(cached$Time) &
+        cached$Time >= start_time &
+        cached$Time <= end_time &
+        is.finite(vals) &
+        vals > 0
+      
+      cached <- cached[keep, , drop = FALSE]
+      
+      if (NROW(cached) > 0) {
+        cached$DateTime <- as.POSIXct(
+          paste(cached$Date, cached$Time),
+          format = "%Y-%m-%d %H:%M",
+          tz = "Asia/Seoul"
+        )
+        cached[[value_name]] <- suppressWarnings(as.numeric(cached[[value_name]]))
+        cached <- cached[order(cached$DateTime), , drop = FALSE]
+        return(cached[, c("DateTime", value_name, "Time"), drop = FALSE])
+      }
+    }
+  }
+  
+  message("[시장 오버레이] ", value_name, " 1분봉 조회 실패: ", last_error)
+  
+  empty <- data.frame(
+    DateTime = as.POSIXct(character(), tz = "Asia/Seoul"),
+    Time = character(),
+    stringsAsFactors = FALSE
+  )
+  empty[[value_name]] <- numeric()
+  empty[, c("DateTime", value_name, "Time"), drop = FALSE]
+}
+
+
+get_kospi_intraday_overlay <- function(date = Sys.Date()) {
+  get_yahoo_intraday_1m(
+    symbol = "^KS11",
+    value_name = "KOSPI",
+    cache_file = file.path("reports", "kospi_intraday_1m.csv"),
+    date = date
+  )
+}
+
+
+get_usdkrw_intraday_overlay <- function(date = Sys.Date()) {
+  get_yahoo_intraday_1m(
+    symbol = "KRW=X",
+    value_name = "USDKRW",
+    cache_file = file.path("reports", "usdkrw_intraday_1m.csv"),
+    date = date
+  )
+}
+
+
+draw_market_overlay_after_plot <- function(kospi_df, fx_df) {
+  
+  has_kospi <- is.data.frame(kospi_df) &&
+    NROW(kospi_df) >= 2 &&
+    "KOSPI" %in% names(kospi_df)
+  
+  has_fx <- is.data.frame(fx_df) &&
+    NROW(fx_df) >= 2 &&
+    "USDKRW" %in% names(fx_df)
+  
+  if (!has_kospi && !has_fx) return(invisible(NULL))
+  
+  calc_series <- function(df, value_col) {
+    v <- suppressWarnings(as.numeric(df[[value_col]]))
+    tm <- as.character(df$Time)
+    
+    ok <- is.finite(v) & !is.na(tm)
+    v <- v[ok]
+    tm <- tm[ok]
+    
+    if (length(v) < 2) return(NULL)
+    
+    pct <- (v / v[1] - 1) * 100
+    
+    hh <- suppressWarnings(as.numeric(substr(tm, 1, 2)))
+    mm <- suppressWarnings(as.numeric(substr(tm, 4, 5)))
+    mins <- (hh - 9) * 60 + mm
+    
+    ok2 <- is.finite(mins) &
+      mins >= 0 &
+      mins <= 390 &
+      is.finite(pct)
+    
+    list(
+      x = mins[ok2] / 390,
+      pct = pct[ok2],
+      value = v[ok2],
+      time = tm[ok2]
+    )
+  }
+  
+  ks <- if (has_kospi) calc_series(kospi_df, "KOSPI") else NULL
+  fx <- if (has_fx)    calc_series(fx_df, "USDKRW") else NULL
+  
+  vals <- numeric()
+  if (!is.null(ks)) vals <- c(vals, ks$pct)
+  if (!is.null(fx)) vals <- c(vals, fx$pct)
+  
+  if (length(vals) == 0) return(invisible(NULL))
+  
+  max_abs <- max(abs(vals), na.rm = TRUE)
+  if (!is.finite(max_abs) || max_abs < 0.20) max_abs <- 0.20
+  
+  x_left  <- 0.02
+  x_width <- 0.96
+  y_mid   <- 0.50
+  y_amp   <- 0.36
+  
+  # 공통 0% 기준선
+  grid::grid.lines(
+    x = grid::unit(c(x_left, x_left + x_width), "npc"),
+    y = grid::unit(c(y_mid, y_mid), "npc"),
+    gp = grid::gpar(
+      col = grDevices::adjustcolor("gray40", alpha.f = 0.16),
+      lwd = 1.0,
+      lty = 2
+    )
+  )
+  
+  # KOSPI: 굵은 회색
+  if (!is.null(ks) && length(ks$x) >= 2) {
+    x <- x_left + x_width * ks$x
+    y <- y_mid + y_amp * (ks$pct / max_abs)
+    
+    grid::grid.lines(
+      x = grid::unit(x, "npc"),
+      y = grid::unit(y, "npc"),
+      gp = grid::gpar(
+        col = grDevices::adjustcolor("gray20", alpha.f = 0.42),
+        lwd = 3.8,
+        lineend = "round",
+        linejoin = "round"
+      )
+    )
+    
+    grid::grid.text(
+      label = sprintf(
+        "KOSPI %+.2f%% | %s | %s",
+        tail(ks$pct, 1),
+        format(round(tail(ks$value, 1), 2), big.mark = ",", scientific = FALSE),
+        tail(ks$time, 1)
+      ),
+      x = grid::unit(0.985, "npc"),
+      y = grid::unit(0.975, "npc"),
+      just = c("right", "top"),
+      gp = grid::gpar(
+        col = grDevices::adjustcolor("gray15", alpha.f = 0.82),
+        fontsize = 10,
+        fontfamily = "malgun"
+      )
+    )
+  }
+  
+  # USD/KRW: 파란색
+  if (!is.null(fx) && length(fx$x) >= 2) {
+    x <- x_left + x_width * fx$x
+    y <- y_mid + y_amp * (fx$pct / max_abs)
+    
+    grid::grid.lines(
+      x = grid::unit(x, "npc"),
+      y = grid::unit(y, "npc"),
+      gp = grid::gpar(
+        col = grDevices::adjustcolor("blue", alpha.f = 0.45),
+        lwd = 3.4,
+        lineend = "round",
+        linejoin = "round"
+      )
+    )
+    
+    grid::grid.text(
+      label = sprintf(
+        "USD/KRW %+.2f%% | %s | %s",
+        tail(fx$pct, 1),
+        format(round(tail(fx$value, 1), 2), big.mark = ",", scientific = FALSE),
+        tail(fx$time, 1)
+      ),
+      x = grid::unit(0.985, "npc"),
+      y = grid::unit(0.945, "npc"),
+      just = c("right", "top"),
+      gp = grid::gpar(
+        col = grDevices::adjustcolor("blue", alpha.f = 0.88),
+        fontsize = 10,
+        fontfamily = "malgun"
+      )
+    )
+  }
+  
+  invisible(NULL)
+}
 
 PROMPT_FILE <- file.path("reports", "gemini_prompt.txt")
 UPDATE_EVERY_SEC <- 10
@@ -2283,9 +2616,22 @@ repeat {
               patchwork::plot_layout(heights = c(2.2, 1, 0.40, 0.65))
           }
           
-          # 창2 갱신
-          #windows() 
+          # =========================================================
+          # 기존 PMS 화면은 원래 combined_plot 그대로 먼저 출력
+          # 이후 현재 장치 위에 KOSPI / USD-KRW 선만 직접 덧그림
+          # =========================================================
+          kospi_overlay_df  <- get_kospi_intraday_overlay(Sys.Date())
+          usdkrw_overlay_df <- get_usdkrw_intraday_overlay(Sys.Date())
+          
+          # 창2 갱신: 기존 화면 그대로
+          #windows()
           suppressMessages(print(combined_plot))
+          
+          # 기존 화면을 건드리지 않고 선만 추가
+          draw_market_overlay_after_plot(
+            kospi_df = kospi_overlay_df,
+            fx_df    = usdkrw_overlay_df
+          )
           
           # PDF 저장
           date_str <- format(Sys.Date(), "%Y%m%d")
@@ -2295,7 +2641,23 @@ repeat {
           if (file.exists(pdf_file)) file.remove(pdf_file)
           
           showtext_auto(TRUE)
-          ggsave(filename = pdf_file, plot = combined_plot, width = 11.69, height = 8.27, device = cairo_pdf)
+          
+          # PDF에서도 기존 PMS를 먼저 출력하고
+          # 그 다음 같은 페이지 위에 시장선만 덧그림
+          grDevices::cairo_pdf(
+            filename = pdf_file,
+            width = 11.69,
+            height = 8.27
+          )
+          
+          suppressMessages(print(combined_plot))
+          
+          draw_market_overlay_after_plot(
+            kospi_df = kospi_overlay_df,
+            fx_df    = usdkrw_overlay_df
+          )
+          
+          grDevices::dev.off()
           cat("Saved:", pdf_file, "\n")
           
           cat(sprintf(
