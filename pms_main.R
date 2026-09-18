@@ -784,7 +784,8 @@ repeat {
   now  <- as.POSIXct(Sys.time())
   hhmm <- format(now, "%H:%M")
   wday <- as.numeric(format(now, "%u"))  # 1=월 ~ 7=일
-  in_fast_range <- hhmm >= "08:40" & hhmm <= "15:30"
+  #in_fast_range <- hhmm >= "08:40" & hhmm <= "15:30"
+  in_fast_range <- hhmm >= "08:40" & hhmm <= "20:00"  # 2026.09.14 애프터마켓 시행
   
   cat("[", count, "회차] ", format(Sys.time(), "%Y년 %m월 %d일 %H시 %M분 %S초"),
       " : 실행 시작***********************************************\n", sep="")
@@ -2293,6 +2294,7 @@ repeat {
           pdf_file <- file.path(out_dir, sprintf("Daily_Risk_%s.pdf", date_str))
           if (file.exists(pdf_file)) file.remove(pdf_file)
           
+          showtext_auto(TRUE)
           ggsave(filename = pdf_file, plot = combined_plot, width = 11.69, height = 8.27, device = cairo_pdf)
           cat("Saved:", pdf_file, "\n")
           
