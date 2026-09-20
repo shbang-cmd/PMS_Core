@@ -406,26 +406,78 @@ get_usdkrw <- function(
   
   
   # ---------------------------------------------------------
-  # Yahoo Finance에서 USD/KRW 조회
-  # KRW=X : 1 USD당 KRW
+  # Unix timestamp 생성
   # ---------------------------------------------------------
   
-  fx <- NULL
+  period1 <- as.numeric(
+    as.POSIXct(start_date, tz = "UTC")
+  )
+  
+  period2 <- as.numeric(
+    as.POSIXct(end_date + 1, tz = "UTC")
+  )
+  
+  
+  # ---------------------------------------------------------
+  # Yahoo Finance URL
+  # ---------------------------------------------------------
+  
+  url <- paste0(
+    "https://query2.finance.yahoo.com/v8/finance/chart/KRW=X",
+    "?period1=", period1,
+    "&period2=", period2,
+    "&interval=1d",
+    "&events=history",
+    "&includeAdjustedClose=true"
+  )
+  
+  
+  yahoo_data <- NULL
   last_error <- NULL
+  
+  
+  # ---------------------------------------------------------
+  # 조회 재시도
+  # ---------------------------------------------------------
   
   for (attempt in seq_len(max_retry)) {
     
-    fx <- tryCatch({
+    yahoo_data <- tryCatch({
       
-      suppressWarnings(
-        quantmod::getSymbols(
-          Symbols = "KRW=X",
-          src = "yahoo",
-          from = start_date,
-          to = end_date + 1,
-          auto.assign = FALSE
-        )
+      h <- curl::new_handle()
+      
+      curl::handle_setopt(
+        h,
+        ssl_verifypeer = FALSE,
+        ssl_verifyhost = FALSE,
+        timeout = 30
       )
+      
+      res <- curl::curl_fetch_memory(
+        url,
+        handle = h
+      )
+      
+      if (res$status_code != 200) {
+        stop(
+          paste0(
+            "Yahoo HTTP 오류: ",
+            res$status_code
+          )
+        )
+      }
+      
+      
+      txt <- rawToChar(res$content)
+      
+      
+      # 중요:
+      # Yahoo JSON 구조를 임의로 단순화하지 않음
+      jsonlite::fromJSON(
+        txt,
+        simplifyVector = FALSE
+      )
+      
       
     }, error = function(e) {
       
@@ -435,9 +487,10 @@ get_usdkrw <- function(
     })
     
     
-    if (!is.null(fx) && NROW(fx) > 0) {
+    if (!is.null(yahoo_data)) {
       break
     }
+    
     
     if (attempt < max_retry) {
       Sys.sleep(retry_wait)
@@ -445,7 +498,7 @@ get_usdkrw <- function(
   }
   
   
-  if (is.null(fx) || NROW(fx) == 0) {
+  if (is.null(yahoo_data)) {
     
     stop(
       paste0(
@@ -461,17 +514,68 @@ get_usdkrw <- function(
   
   
   # ---------------------------------------------------------
-  # 종가 추출
+  # Yahoo 응답 확인
   # ---------------------------------------------------------
   
+  if (
+    is.null(yahoo_data$chart$result) ||
+    length(yahoo_data$chart$result) == 0
+  ) {
+    
+    stop("USD/KRW 환율 데이터 없음")
+  }
+  
+  
+  x <- yahoo_data$chart$result[[1]]
+  
+  
+  # ---------------------------------------------------------
+  # 날짜 / 종가 추출
+  # ---------------------------------------------------------
+  
+  timestamps <- unlist(x$timestamp)
+  
+  close_price <- unlist(
+    x$indicators$quote[[1]]$close
+  )
+  
+  
+  if (
+    length(timestamps) == 0 ||
+    length(close_price) == 0
+  ) {
+    
+    stop("USD/KRW 환율 데이터 없음")
+  }
+  
+  
+  # Yahoo에서 null 값이 섞여 있을 가능성 고려
+  n <- min(
+    length(timestamps),
+    length(close_price)
+  )
+  
+  timestamps <- timestamps[seq_len(n)]
+  close_price <- close_price[seq_len(n)]
+  
+  
   result <- data.frame(
-    date = as.Date(zoo::index(fx)),
-    rate = as.numeric(quantmod::Cl(fx))
+    
+    date = as.Date(
+      as.POSIXct(
+        timestamps,
+        origin = "1970-01-01",
+        tz = "UTC"
+      )
+    ),
+    
+    rate = as.numeric(close_price)
+    
   )
   
   
   # ---------------------------------------------------------
-  # 날짜 범위 정리
+  # 정리
   # ---------------------------------------------------------
   
   result <- result %>%
@@ -504,9 +608,8 @@ get_usdkrw <- function(
   }
   
   
-  result
+  return(result)
 }
-
 
 
 # =========================================================
