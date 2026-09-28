@@ -116,8 +116,19 @@ last_mc_date <- as.Date(NA)
 week_kor <- c("일", "월", "화", "수", "목", "금", "토")
 min_days_for_risk <- 100
 
-font_add(family = "malgun", regular = "C:\\Windows\\Fonts\\malgun.ttf")
-showtext_auto()
+# font_add(family = "malgun", regular = "C:\\Windows\\Fonts\\malgun.ttf")
+# showtext_auto()
+font_add(
+  family = "malgun",
+  regular = "C:\\Windows\\Fonts\\malgun.ttf"
+)
+
+windowsFonts(
+  malgun = windowsFont("Malgun Gothic")
+)
+
+showtext_auto(TRUE)
+
 
 # 환율 정보 변후 초기화
 spx <- NA
