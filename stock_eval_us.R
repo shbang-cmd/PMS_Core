@@ -3,7 +3,6 @@
 # 네이버 증권홈페이지 개편으로 조회방식 수정(2026.09.11)
 
 library(quantmod)
-library(writexl)
 library(dplyr)
 library(tidyverse)
 library(httr)
@@ -71,7 +70,7 @@ n_stock <- nrow(data_en)
 output_file <- paste0(
   "output_stock_us_",
   today,
-  ".xlsx"
+  ".csv"
 )
 
 
@@ -1159,12 +1158,13 @@ data <- rbind(
 
 
 # ============================================================
-# Excel 저장
+# CSV 저장 (UTF-8, 기존 컬럼/합계 행 유지)
 # ============================================================
 
-writexl::write_xlsx(
+readr::write_csv(
   data,
-  output_file
+  output_file,
+  na = ""
 )
 
 
