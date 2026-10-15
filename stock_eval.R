@@ -15,7 +15,6 @@
 library(rvest)
 library(dplyr)
 library(readr)
-library(openxlsx)
 library(scales)
 library(ggplot2)
 library(tidyverse)
@@ -69,7 +68,7 @@ data <- read_csv(
 output_file <- paste0(
   "output_stock_",
   today,
-  ".xlsx"
+  ".csv"
 )
 
 
@@ -474,7 +473,7 @@ if (anyNA(current_price)) {
       "실패 종목:\n",
       fail_msg,
       "\n\n",
-      "잘못된 평가금/자산비중 Excel 파일은 생성하지 않았습니다.\n"
+      "잘못된 평가금/자산비중 CSV 파일은 생성하지 않았습니다.\n"
     )
   )
 }
@@ -629,67 +628,10 @@ data <- rbind(
 
 
 # ============================================================
-# Excel 저장
+# CSV 저장 (UTF-8, 암호화 대상 XLSX 대신 PMS 공유용)
+# 합계 행과 컬럼 순서는 기존 Excel 출력과 동일하게 유지
 # ============================================================
-
-wb <- createWorkbook()
-
-
-
-addWorksheet(
-  wb,
-  "Sheet 1"
-)
-
-
-
-writeData(
-  wb,
-  sheet = "Sheet 1",
-  data
-)
-
-
-
-conditionalFormatting(
-  
-  wb,
-  
-  sheet = "Sheet 1",
-  
-  cols = 7:10,
-  
-  rows = 2:(nrow(data) + 1),
-  
-  type = "databar",
-  
-  showValue = TRUE
-)
-
-
-
-setColWidths(
-  
-  wb,
-  
-  "Sheet 1",
-  
-  cols = 1:ncol(data),
-  
-  widths = "auto"
-)
-
-
-
-saveWorkbook(
-  
-  wb,
-  
-  file = output_file,
-  
-  overwrite = TRUE
-)
-
+readr::write_csv(data, output_file, na = "")
 
 
 cat(
