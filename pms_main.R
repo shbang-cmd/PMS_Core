@@ -15,8 +15,8 @@
 #         dividend.csv       : 수기로 입력한 연초부터 현재까지 배당금 내역(귀찮으면 안만들어도 됨)
 #
 # [출력 파일]
-#         output_stock_{YYYY-MM-DD}.xlsx      : 한국주식 평가액
-#         output_stock_us_{YYYY-MM-DD}.xlsx   : 미국주식 평가액
+#         output_stock_{YYYY-MM-DD}.csv      : 한국주식 평가액
+#         output_stock_us_{YYYY-MM-DD}.csv   : 미국주식 평가액
 #         output_sum.csv                      : 평가액총액, 수익금
 #                                               (최소 100일이상 데이터 필요)
 #         reports/Daily_Risk_{YYYYMMDD}.pdf   : 1페이지 그래프 보고서
@@ -28,7 +28,7 @@
 # 이 코드는 "돈을 얼마나 벌었는지를 관리하지 않는다. 망하지 않을 구조만 관리한다."
 # 위험관리 핵심 3대 지표 : MDD · CVaR · Risk-Off 3개
 
-# 주의 : 표본수가 100일 미만이면 그래프는 만들지 않음 -> 100일 이상 표본수(누적일) 필요, 단, 엑셀 출력은 계속 만듦
+# 주의 : 표본수가 100일 미만이면 그래프는 만들지 않음 -> 100일 이상 표본수(누적일) 필요, 단, 평가 CSV 출력은 계속 만듦
 
 # 마이너 업데이트 기록
 # 2026-06-12 금융소득종합과세자(연간 금융소득 2천만원 초과)가 되는지 여부를 미리 알수 있는 텍스트 그래프 추가
@@ -43,8 +43,8 @@
 pkg <- c("openxlsx", "rvest", "httr", "patchwork", "ggplot2",
          "readr", "readxl", "dplyr", "scales", "treemap", "DT", "stringr",
          "PerformanceAnalytics", "showtext", "zoo", "tidyr", "quantmod",
-         "xts", "rugarch", "htmltools", "tidyverse", "DT", "ggplot2",
-         "dplyr", "writexl", "purrr", "broom", "jsonlite")
+         "xts", "rugarch", "htmltools", "tidyverse", 
+         "writexl", "purrr", "broom", "jsonlite")
 
 new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
 if (length(new.pkg)) install.packages(new.pkg, dependencies = TRUE)
@@ -99,6 +99,31 @@ REPEAT_FLAG = TRUE  # 주기적인 반복이면 TRUE, 1회 실행이면 FALSE
 
 weights <- setNames(weights, c("SPY_ETC","SCHD","QQQ","TQQQ","GOLD","IEF","CASH"))
 setwd(wd)
+
+# 국내/미국 평가 CSV 공통 리더
+# 종목번호는 005930 같이 앞자리 0이 의미 있으므로 문자형으로 보존
+# 평가금·수익금·수량 등 나머지 컬럼은 숫자로 자동 인식
+read_stock_csv <- function(path) {
+  if (!file.exists(path)) stop("평가 CSV 파일 없음: ", path)
+  df <- readr::read_csv(
+    path,
+    col_types = readr::cols(
+      .default = readr::col_guess(),
+      종목번호 = readr::col_character(),
+      보유증권사 = readr::col_character()
+    ),
+    locale = readr::locale(encoding = "UTF-8"),
+    show_col_types = FALSE,
+    na = c("", "NA")
+  )
+  needed <- c("종목명", "종목번호", "보유증권사", "수량", "평가금", "수익금")
+  missing <- setdiff(needed, names(df))
+  if (length(missing)) stop("평가 CSV 필수 컬럼 누락: ", paste(missing, collapse = ", "), " (", path, ")")
+  for (key in c("수량", "평가금", "수익금")) {
+    if (!is.numeric(df[[key]])) stop("평가 CSV 숫자 컬럼 오류: ", key, " (", path, ")")
+  }
+  df
+}
 options(scipen = 999)
 
 # 리스크 + 팩터 + PCA 모듈 로드
@@ -368,14 +393,13 @@ make_badge_text <- function(sum_xts, GLD_MODE) {
 }
 
 # 전일 파일 찾기
-get_prev_file <- function(prefix = "output_stock_", ext = "xlsx") {
-  pattern <- paste0("^", prefix, "\\d{4}-\\d{2}-\\d{2}\\.", ext, "$")
-  files <- dir(pattern = pattern)
-  if (length(files) == 0) return(NA)
-  dates <- as.Date(sub(paste0(prefix, "(\\d{4}-\\d{2}-\\d{2})\\.", ext), "\\1", files))
-  valid_idx <- which(dates < Sys.Date())
-  if (length(valid_idx) == 0) return(NA)
-  files[which.max(dates[valid_idx])]
+get_prev_file <- function(prefix = "output_stock_", ext = "csv") {
+  files <- dir(pattern = paste0("^", prefix, "[0-9]{4}-[0-9]{2}-[0-9]{2}\\.", ext, "$"))
+  if (!length(files)) return(NA_character_)
+  dates <- as.Date(sub(paste0("^", prefix, "([0-9]{4}-[0-9]{2}-[0-9]{2})\\.", ext, "$"), "\\1", files))
+  candidates <- which(!is.na(dates) & dates < Sys.Date())
+  if (!length(candidates)) return(NA_character_)
+  files[candidates[which.max(dates[candidates])]]
 }
 
 join_stock_data <- function(today_df, prev_df) {
@@ -966,15 +990,7 @@ last_update_time <- Sys.time() - 9999
 
 
 get_prev_output_file <- function(prefix) {
-  files <- list.files(
-    pattern = paste0("^", prefix, "\\d{4}-\\d{2}-\\d{2}\\.xlsx$")
-  )
-  
-  files <- sort(files)
-  
-  if (length(files) < 2) return(NA_character_)
-  
-  files[length(files) - 1]
+  get_prev_file(prefix, ext = "csv")
 }
 
 compare_stock_change <- function(today_file, prev_file, market = "KR") {
@@ -983,8 +999,8 @@ compare_stock_change <- function(today_file, prev_file, market = "KR") {
     return(tibble())
   }
   
-  prev <- read_excel(prev_file)
-  today <- read_excel(today_file)
+  prev <- read_stock_csv(prev_file)
+  today <- read_stock_csv(today_file)
   
   prev2 <- prev %>%
     filter(!is.na(종목명), !is.na(종목번호)) %>%
@@ -1026,8 +1042,8 @@ compare_stock_change <- function(today_file, prev_file, market = "KR") {
 
 today <- Sys.Date()
 
-today_ko_file <- paste0("output_stock_", today, ".xlsx")
-today_us_file <- paste0("output_stock_us_", today, ".xlsx")
+today_ko_file <- paste0("output_stock_", today, ".csv")
+today_us_file <- paste0("output_stock_us_", today, ".csv")
 
 prev_ko_file <- get_prev_output_file("output_stock_")
 prev_us_file <- get_prev_output_file("output_stock_us_")
@@ -1237,6 +1253,12 @@ repeat {
   cat("[", count, "회차] ", format(Sys.time(), "%Y년 %m월 %d일 %H시 %M분 %S초"),
       " : 실행 시작***********************************************\n", sep="")
   
+  # 실패한 실행의 임시 변수/이전 실행 결과가 후속 보고서에 섞이지 않도록 방지
+  loop_ok <- FALSE
+  cvar_amt <- NA_real_
+  pa_mdd <- NA_real_
+  rt <- NULL
+
   tryCatch({
     
     # =========================================================
@@ -1246,8 +1268,8 @@ repeat {
     suppressWarnings(source("stock_eval_us.R"))
     
     today <- Sys.Date()
-    file1 <- paste0("output_stock_",    today, ".xlsx")
-    file2 <- paste0("output_stock_us_", today, ".xlsx")
+    file1 <- paste0("output_stock_",    today, ".csv")
+    file2 <- paste0("output_stock_us_", today, ".csv")
     output_file <- "output_sum.csv"
     
     if (!file.exists(file1) || !file.exists(file2)) {
@@ -1259,9 +1281,18 @@ repeat {
     
     if (!goto_sleep) {
       
-      data1 <- read_excel(file1)
-      data2 <- read_excel(file2)
+      data1 <- read_stock_csv(file1)
+      data2 <- read_stock_csv(file2)
       
+      # 마지막 합계행 보존 확인: 국내는 '합계', 미국은 'KRW 기준' 원화 환산 합계
+      if (!nrow(data1) || !nrow(data2) ||
+          !grepl("합계", tail(data1$종목명, 1)) ||
+          !grepl("KRW 기준", tail(data2$종목명, 1)) ||
+          !is.finite(tail(data1$평가금, 1)) ||
+          !is.finite(tail(data2$평가금, 1))) {
+        stop("국내/미국 평가 CSV 합계 행 오류: PMS 합산을 중단합니다.")
+      }
+
       last_value1   <- tail(data1[["평가금"]],  1)
       last_value1_2 <- tail(data1[["수익금"]], 1)
       
@@ -1527,8 +1558,9 @@ repeat {
         
         
         # 종목군별 트리맵 : 종목별로 보니까 그루핑이 안되어있어서 종목을 그룹으로 묶어서 비중을 확인하고자 함
+        # rt는 아래쪽에서 생성되므로 이 단계에서는 이미 생성된 dt_fn 사용
         treemap(
-          rt %>%
+          dt_fn %>%
             mutate(
               종목그룹 = case_when(
                 grepl("나스닥100", 종목명) | grepl("QQQM", 종목명) ~ "NASDAQ100",
@@ -1568,8 +1600,8 @@ repeat {
         prev_ko_file <- get_prev_file("output_stock_")
         prev_en_file <- get_prev_file("output_stock_us_")
         
-        data_prev_ko <- if (!is.na(prev_ko_file) && file.exists(prev_ko_file)) read_excel(prev_ko_file) else NULL
-        data_prev_en <- if (!is.na(prev_en_file) && file.exists(prev_en_file)) read_excel(prev_en_file) else NULL
+        data_prev_ko <- if (!is.na(prev_ko_file) && file.exists(prev_ko_file)) read_stock_csv(prev_ko_file) else NULL
+        data_prev_en <- if (!is.na(prev_en_file) && file.exists(prev_en_file)) read_stock_csv(prev_en_file) else NULL
         
         if (!is.null(data_prev_ko) && !is.null(data_prev_en)) {
           data_prev_ko <- data_prev_ko %>% head(-1) %>%
@@ -2786,9 +2818,10 @@ repeat {
         print(tail(dd %>% select(Date, Sum, Profit, Return_TWR, Return_NAV), 2))
       }
     }
-    
+    loop_ok <- TRUE
   }, error = function(e) {
-    cat("[ERROR] 루프 1회차 실행 중 에러 발생: ", conditionMessage(e), "\n", sep="")
+    cat(sprintf("[ERROR] 루프 %d회차 실행 중 에러 발생: %s\n", count, conditionMessage(e)))
+    message("[PMS] 이번 회차의 분석/프롬프트 갱신을 건너뜁니다.")
   })
   
   cat("장중 10분 그이외는 1시간 후에 다시 실행됨(중단: Interrupt-R 빨간버튼) ",
@@ -2797,7 +2830,9 @@ repeat {
   count <- count + 1
   
   now <- Sys.time()
-  if (exists("is_initial_mode") && as.numeric(difftime(now, last_update_time, units="secs")) >= UPDATE_EVERY_SEC && !is_initial_mode) {
+  if (isTRUE(loop_ok) && exists("is_initial_mode") &&
+      as.numeric(difftime(now, last_update_time, units="secs")) >= UPDATE_EVERY_SEC &&
+      !is_initial_mode) {
     if (exists("dd") && exists("sum_xts")) {
       gld_mode_now <- if (exists("GLD_MODE")) isTRUE(GLD_MODE) else FALSE
       badge_text <- make_badge_text(sum_xts, gld_mode_now)
@@ -2824,7 +2859,8 @@ repeat {
   if (!REPEAT_FLAG) break
   
   
-  # 종목을 좀 묶어서 보기 위해 자산군별 정의하여 통계를 내보자.
+  # 성공한 회차에서만 종목별 결과를 표시
+  if (isTRUE(loop_ok) && is.data.frame(rt)) {
   print(
     rt %>%
       mutate(
@@ -2873,6 +2909,7 @@ repeat {
   )
   
   
+  }
   wait_min <- if (in_fast_range & (wday >= 1 & wday <= 5)) 10 else 60
   Sys.sleep(wait_min * 60)
 }
